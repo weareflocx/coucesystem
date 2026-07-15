@@ -1,6 +1,7 @@
 import { confluenceWeaveProject } from "./confluence-weave.js";
 import { flowCompressionProject } from "./flow-compression.js";
 import { mobiusFlowProject } from "./mobius-flow.js";
+import { mobiusFlow11Project } from "./mobius-flow-1-1.js";
 import { orbitalBasinProject } from "./orbital-basin.js";
 import { scalarDriftProject } from "./scalar-drift.js";
 import { vectorCurrentsProject } from "./vector-currents.js";
@@ -11,5 +12,6 @@ export const CAUCE_PROJECTS = [
   scalarDriftProject,
   orbitalBasinProject,
   mobiusFlowProject,
+  mobiusFlow11Project,
   confluenceWeaveProject
 ];

@@ -66,6 +66,7 @@ function createExampleHtml(config: EmbedConfigV1, configFilename: string): strin
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
     <title>${config.label}</title>
     <style>
       * { box-sizing: border-box; }
@@ -92,13 +93,16 @@ function createExampleHtml(config: EmbedConfigV1, configFilename: string): strin
 </html>`;
 }
 
-function createReadme(configFilename: string, snippet: string): string {
+function createReadme(configFilename: string, snippet: string, usesThree: boolean): string {
+  const vendorEntry = usesThree
+    ? "- vendor/three.module.js y vendor/three.core.min.js: backend 3D local incluido en el paquete.\n"
+    : "";
   return `# Cauce web embed
 
 ## Archivos
 
-- cauce-embed.js: Web Component autónomo, sin dependencias externas.
-- projects/: renderers deterministas incluidos en el paquete.
+- cauce-embed.js: Web Component autónomo.
+${vendorEntry}- projects/: renderers deterministas incluidos en el paquete.
 - ${configFilename}: configuración editable de la pieza.
 - index.html: integración mínima funcional.
 
@@ -126,28 +130,45 @@ function createProjectModuleEntries(): { name: string; contents: string }[] {
   return Object.entries(projectModuleSources)
     .map(([sourcePath, contents]) => ({
       name: `projects/${sourcePath.split("/").at(-1)}`,
-      contents
+      contents: contents.replace(
+        /from\s+["']three["']/g,
+        'from "../vendor/three.module.js"'
+      ).replace(
+        /import\(["']three["']\)/g,
+        'import("../vendor/three.module.js")'
+      )
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function createWebPackage(
+export async function createWebPackage(
   state: EngineState,
   time: number,
   transparent: boolean
-): WebPackageResult {
+): Promise<WebPackageResult> {
   const project = getProject(state.projectId);
   const format = getOutputFormat(state.formatKey);
   const config = createConfig(state, time, transparent);
   const configFilename = `cauce-${project.index}-${project.id}.json`;
   const snippet = createSnippet(configFilename, format.width, format.height);
   const configSource = `${JSON.stringify(config, null, 2)}\n`;
+  const usesThree = project.backend === "three";
+  const vendorEntries = usesThree
+    ? await Promise.all([
+      import("../../node_modules/three/build/three.module.min.js?raw"),
+      import("../../node_modules/three/build/three.core.min.js?raw")
+    ]).then(([threeModule, threeCore]) => [
+      { name: "vendor/three.module.js", contents: threeModule.default },
+      { name: "vendor/three.core.min.js", contents: threeCore.default }
+    ])
+    : [];
   const blob = createZip([
     { name: "cauce-embed.js", contents: embedModuleSource },
+    ...vendorEntries,
     ...createProjectModuleEntries(),
     { name: configFilename, contents: configSource },
     { name: "index.html", contents: createExampleHtml(config, configFilename) },
-    { name: "README.md", contents: createReadme(configFilename, snippet) }
+    { name: "README.md", contents: createReadme(configFilename, snippet, usesThree) }
   ]);
 
   return {

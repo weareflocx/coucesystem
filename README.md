@@ -22,7 +22,7 @@ npm run build
 - `src/main.ts`: shell de autor, controles y comunicación con el worker.
 - `src/styles.css`: layout y sistema visual del estudio.
 
-La vista previa se dibuja mediante Canvas 2D en un `OffscreenCanvas` transferido a un Web Worker. Cada proyecto implementa su render Canvas y su exportador SVG desde el mismo estado determinista.
+La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D para los proyectos vectoriales existentes y Three.js/WebGL para las piezas con geometría 3D. Ambos motores reciben el mismo estado y reloj determinista; cada proyecto mantiene además una salida SVG.
 
 ## Estado actual
 
@@ -31,6 +31,7 @@ La vista previa se dibuja mediante Canvas 2D en un `OffscreenCanvas` transferido
 - `03 · Scalar Drift`: píxeles cuadrados con relleno escalar por niveles, calibrados contra la referencia de 4,5 s a 20 fps.
 - `04 · Orbital Basin`: órbitas cerradas sobre una cuenca planar con dos tangencias compartidas.
 - `05 · Möbius Flow`: corrientes cerradas sobre una banda de Möbius paramétrica, con una cara y un único borde.
+- `05.1 · Möbius Flow 1.1`: malla Three.js de doble cara con depth buffer, iluminación y corrientes 3D.
 - `06 · Confluence Weave`: cauces orbitales convertidos en un campo de densidad cuyos contactos forman puentes y membranas vectoriales.
 - Guardados locales v2 con migración de v1 e intercambio mediante `.cauce.json`.
 - Exportación SVG del fotograma actual.

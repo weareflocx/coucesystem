@@ -1,4 +1,23 @@
 export type CauceContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+export type CauceCanvas = HTMLCanvasElement | OffscreenCanvas;
+export type ProjectBackend = "canvas2d" | "three";
+
+export interface ProjectRendererViewport {
+  width: number;
+  height: number;
+  pixelRatio: number;
+  contentX: number;
+  contentY: number;
+  contentWidth: number;
+  contentHeight: number;
+  stageBackground: string | null;
+}
+
+export interface ProjectRenderer {
+  resize(viewport: ProjectRendererViewport): void;
+  render(frame: ProjectFrame): void;
+  dispose(): void;
+}
 
 export interface OutputFormat {
   key: string;
@@ -53,11 +72,13 @@ export interface ProjectDefinition {
   index: string;
   name: string;
   description: string;
+  backend?: ProjectBackend;
   preferredFps: number;
   preferredFormatKey?: string;
   preferredLoopSeconds?: number;
   controls: RangeControlDefinition[];
   defaults: Record<string, number>;
-  render(context: CauceContext, frame: ProjectFrame): void;
+  render?(context: CauceContext, frame: ProjectFrame): void;
+  createRenderer?(canvas: CauceCanvas): ProjectRenderer | Promise<ProjectRenderer>;
   toSvg(frame: ProjectFrame): string;
 }

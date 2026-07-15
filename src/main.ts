@@ -11,7 +11,6 @@ import {
 } from "./core/storage";
 import type { EngineState, ProjectDefinition, RangeControlDefinition } from "./core/types";
 import { exportAlphaWebM, supportsAlphaWebM } from "./core/video-export";
-import { createWebPackage } from "./core/web-export";
 import { createPresetDownload, parseSharedPreset } from "./core/preset";
 import { PROJECTS, getProject } from "./projects";
 
@@ -75,6 +74,7 @@ const canvasMeta = byId<HTMLSpanElement>("canvas-meta");
 const engineState = byId<HTMLSpanElement>("engine-state");
 const canvasStage = byId<HTMLDivElement>("canvas-stage");
 const canvas = byId<HTMLCanvasElement>("cauce-canvas");
+const threeCanvas = byId<HTMLCanvasElement>("cauce-three-canvas");
 const canvasMessage = byId<HTMLParagraphElement>("canvas-message");
 const canvasError = byId<HTMLParagraphElement>("canvas-error");
 
@@ -236,7 +236,8 @@ function formulaUsesDefaults(project: ProjectDefinition): boolean {
 function updateStaticUi(): void {
   const project = getProject(state.projectId);
   const format = getOutputFormat(state.formatKey);
-  canvasMeta.textContent = `${format.label} · ${format.width} × ${format.height} · ${project.preferredFps} fps`;
+  const backendLabel = project.backend === "three" ? "THREE / WEBGL" : "CANVAS 2D";
+  canvasMeta.textContent = `${backendLabel} · ${format.label} · ${format.width} × ${format.height} · ${project.preferredFps} fps`;
   seedInput.value = String(state.seed);
   projectSelect.value = state.projectId;
   formatSelect.value = state.formatKey;
@@ -249,6 +250,11 @@ function updateStaticUi(): void {
   durationInput.value = String(state.playback.loopSeconds);
   durationValue.value = `${state.playback.loopSeconds.toFixed(1)} s`;
   resetFormulaButton.disabled = formulaUsesDefaults(project);
+  const usesThree = project.backend === "three";
+  canvas.classList.toggle("is-active", !usesThree);
+  threeCanvas.classList.toggle("is-active", usesThree);
+  canvas.setAttribute("aria-hidden", String(usesThree));
+  threeCanvas.setAttribute("aria-hidden", String(!usesThree));
   updatePlaybackButton();
 }
 
@@ -690,14 +696,15 @@ cancelAlphaVideoButton.addEventListener("click", () => {
   videoExportStatus.textContent = "Cancelando exportación…";
 });
 
-exportWebButton.addEventListener("click", () => {
+exportWebButton.addEventListener("click", async () => {
   exportWebButton.disabled = true;
   webExportError.hidden = true;
   webExportError.textContent = "";
   webExportStatus.textContent = "Construyendo paquete autónomo…";
 
   try {
-    const result = createWebPackage(
+    const { createWebPackage } = await import("./core/web-export");
+    const result = await createWebPackage(
       structuredClone(state),
       currentTime,
       webBackgroundSelect.value === "transparent"
@@ -758,7 +765,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function initializeWorker(): void {
-  if (!("transferControlToOffscreen" in canvas)) {
+  if (!("transferControlToOffscreen" in canvas) || !("transferControlToOffscreen" in threeCanvas)) {
     canvasMessage.hidden = true;
     canvasError.hidden = false;
     canvasError.textContent = "Este navegador no permite transferir Canvas a un worker.";
@@ -768,14 +775,16 @@ function initializeWorker(): void {
 
   const bounds = canvasStage.getBoundingClientRect();
   const offscreen = canvas.transferControlToOffscreen();
+  const threeOffscreen = threeCanvas.transferControlToOffscreen();
   post({
     type: "init",
     canvas: offscreen,
+    threeCanvas: threeOffscreen,
     cssWidth: Math.max(1, bounds.width),
     cssHeight: Math.max(1, bounds.height),
     pixelRatio: window.devicePixelRatio,
     state
-  }, [offscreen]);
+  }, [offscreen, threeOffscreen]);
 }
 
 const resizeObserver = new ResizeObserver((entries) => {

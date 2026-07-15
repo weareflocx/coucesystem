@@ -42,8 +42,28 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
   const frameDuration = 1 / fps;
   const frameCount = Math.max(1, Math.round(state.playback.loopSeconds * fps));
   const canvas = new OffscreenCanvas(format.width, format.height);
-  const context = canvas.getContext("2d", { alpha: true });
-  if (!context) throw new Error("No se pudo crear el lienzo transparente de exportación.");
+  const context = project.backend === "three"
+    ? null
+    : canvas.getContext("2d", { alpha: true });
+  const projectRenderer = project.backend === "three"
+    ? await project.createRenderer?.(canvas) ?? null
+    : null;
+  if (project.backend === "three" && !projectRenderer) {
+    throw new Error("El proyecto 3D no incluye un renderer exportable.");
+  }
+  if (project.backend !== "three" && (!context || !project.render)) {
+    throw new Error("No se pudo crear el lienzo transparente de exportación.");
+  }
+  projectRenderer?.resize({
+    width: format.width,
+    height: format.height,
+    pixelRatio: 1,
+    contentX: 0,
+    contentY: 0,
+    contentWidth: format.width,
+    contentHeight: format.height,
+    stageBackground: null
+  });
 
   const target = new BufferTarget();
   const output = new Output({
@@ -68,9 +88,6 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
         throw new DOMException("Exportación cancelada.", "AbortError");
       }
 
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.globalAlpha = 1;
-      context.clearRect(0, 0, format.width, format.height);
       const frame: ProjectFrame = {
         width: format.width,
         height: format.height,
@@ -80,7 +97,14 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
         parameters: state.parameters,
         transparent: true
       };
-      project.render(context, frame);
+      if (projectRenderer) {
+        projectRenderer.render(frame);
+      } else if (context && project.render) {
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.globalAlpha = 1;
+        context.clearRect(0, 0, format.width, format.height);
+        project.render(context, frame);
+      }
       await source.add(frameIndex * frameDuration, frameDuration, {
         keyFrame: frameIndex % (fps * 2) === 0
       });
@@ -102,5 +126,7 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
   } catch (error) {
     if (output.state === "started") await output.cancel();
     throw error;
+  } finally {
+    projectRenderer?.dispose();
   }
 }

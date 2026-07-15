@@ -5,11 +5,11 @@
 La salida principal será un Web Component autónomo que reciba una configuración serializada:
 
 ```html
-<cauce-flow project="vector-currents" src="/flows/liquidez-nocturna.json"></cauce-flow>
+<cauce-flow src="/flows/liquidez-nocturna.json"></cauce-flow>
 <script type="module" src="/cauce-embed.js"></script>
 ```
 
-El embed reutiliza los mismos renderers deterministas de Studio y acepta fondo transparente. El ZIP contiene el Web Component autónomo, un archivo JSON versionado, un ejemplo HTML y documentación de la API. No incluye datos del usuario ni dependencias de la aplicación de autor.
+El embed reutiliza los mismos renderers deterministas de Studio y acepta fondo transparente. El ZIP contiene el Web Component autónomo, un archivo JSON versionado, un ejemplo HTML y documentación de la API. Los proyectos Three.js incorporan una copia local del motor; no dependen de CDN ni de la aplicación de autor.
 
 Los presets compartibles usan el esquema v2 y la extensión `.cauce.json`. Al importarlos, Studio valida el proyecto y formato y limita cada valor al rango declarado por sus controles.
 

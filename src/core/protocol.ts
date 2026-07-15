@@ -4,6 +4,7 @@ export type MainToWorkerMessage =
   | {
       type: "init";
       canvas: OffscreenCanvas;
+      threeCanvas: OffscreenCanvas;
       cssWidth: number;
       cssHeight: number;
       pixelRatio: number;

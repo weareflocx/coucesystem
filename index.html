@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
     <meta name="description" content="Cauce system — estudio de movimiento generativo.">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#080a0b">
@@ -94,7 +95,8 @@
           </div>
         </header>
         <div class="canvas-stage" id="canvas-stage">
-          <canvas id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
+          <canvas class="canvas-surface is-active" id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
+          <canvas class="canvas-surface" id="cauce-three-canvas" aria-label="Vista previa 3D animada del proyecto Cauce" aria-hidden="true"></canvas>
           <p class="canvas-message" id="canvas-message">Iniciando motor gráfico…</p>
           <p class="canvas-error" id="canvas-error" role="alert" hidden></p>
         </div>

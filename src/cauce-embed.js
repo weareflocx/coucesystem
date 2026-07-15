@@ -10,6 +10,7 @@ export const CAUCE_RENDERERS = Object.fromEntries(
 export function renderCauceProject(projectId, context, frame) {
   const project = CAUCE_RENDERERS[projectId];
   if (!project) throw new Error(`Proyecto Cauce desconocido: ${projectId}.`);
+  if (!project.render) throw new Error(`El proyecto ${projectId} requiere el backend Three.js.`);
   project.render(context, frame);
 }
 
@@ -115,7 +116,9 @@ if (
       `;
       this._canvas = root.querySelector("canvas");
       this._error = root.querySelector("[part='error']");
-      this._context = this._canvas.getContext("2d", { alpha: true });
+      this._context = null;
+      this._renderer = null;
+      this._backendProjectId = "";
       this._config = null;
       this._time = 0;
       this._playing = false;
@@ -124,6 +127,7 @@ if (
       this._frameRequest = 0;
       this._lastTimestamp = null;
       this._loadToken = 0;
+      this._applyToken = 0;
       this._resizeObserver = null;
       this._intersectionObserver = null;
       this._reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -176,6 +180,10 @@ if (
       this._intersectionObserver?.disconnect();
       document.removeEventListener("visibilitychange", this._onVisibilityChange);
       this._reducedMotion.removeEventListener("change", this._onReducedMotionChange);
+      this._renderer?.dispose();
+      this._renderer = null;
+      this._backendProjectId = "";
+      this._applyToken += 1;
     }
 
     attributeChangedCallback(name, previousValue, nextValue) {
@@ -223,7 +231,7 @@ if (
         const response = await fetch(source);
         if (!response.ok) throw new Error(`No se pudo cargar ${source} (${response.status}).`);
         const config = await response.json();
-        if (token === this._loadToken) this._applyConfig(config);
+        if (token === this._loadToken) await this._applyConfig(config);
       } catch (error) {
         if (token !== this._loadToken) return;
         const message = error instanceof Error ? error.message : "No se pudo cargar la configuración.";
@@ -232,9 +240,14 @@ if (
       }
     }
 
-    _applyConfig(value) {
+    async _applyConfig(value) {
+      const token = ++this._applyToken;
+      this._stopLoop();
       try {
-        this._config = normalizeConfig(value);
+        const config = normalizeConfig(value);
+        const ready = await this._setupBackend(CAUCE_RENDERERS[config.projectId], token);
+        if (!ready || token !== this._applyToken) return;
+        this._config = config;
         this._time = this._config.playback.startTime;
         this._playing = this._config.playback.autoplay && !this._reducedMotion.matches;
         this._lastTimestamp = null;
@@ -255,11 +268,54 @@ if (
       }
     }
 
+    async _setupBackend(project, token) {
+      if (this._backendProjectId === project.id) return true;
+      this._renderer?.dispose();
+      this._renderer = null;
+      this._context = null;
+      this._backendProjectId = "";
+
+      const nextCanvas = document.createElement("canvas");
+      nextCanvas.setAttribute("part", "canvas");
+      nextCanvas.setAttribute("role", "img");
+      this._canvas.replaceWith(nextCanvas);
+      this._canvas = nextCanvas;
+
+      if (project.backend === "three") {
+        if (!project.createRenderer) throw new Error(`El proyecto ${project.id} no incluye renderer Three.js.`);
+        const renderer = await project.createRenderer(this._canvas);
+        if (token !== this._applyToken) {
+          renderer.dispose();
+          return false;
+        }
+        this._renderer = renderer;
+      } else {
+        this._context = this._canvas.getContext("2d", { alpha: true });
+        if (!this._context) throw new Error("Canvas 2D no está disponible.");
+      }
+      this._backendProjectId = project.id;
+      return true;
+    }
+
     _resize() {
       if (!this._config) return;
       const bounds = this.getBoundingClientRect();
       if (bounds.width <= 0 || bounds.height <= 0) return;
       const ratio = clamp(window.devicePixelRatio || 1, 1, 2);
+      if (this._renderer) {
+        this._renderer.resize({
+          width: bounds.width,
+          height: bounds.height,
+          pixelRatio: ratio,
+          contentX: 0,
+          contentY: 0,
+          contentWidth: bounds.width,
+          contentHeight: bounds.height,
+          stageBackground: null
+        });
+        this._render();
+        return;
+      }
       const width = Math.max(1, Math.min(4096, Math.round(bounds.width * ratio)));
       const height = Math.max(1, Math.min(4096, Math.round(bounds.height * ratio)));
       if (this._canvas.width === width && this._canvas.height === height) return;
@@ -269,11 +325,25 @@ if (
     }
 
     _render() {
-      if (!this._config || !this._context || this._canvas.width === 0 || this._canvas.height === 0) return;
+      if (!this._config || this._canvas.width === 0 || this._canvas.height === 0) return;
+      const project = CAUCE_RENDERERS[this._config.projectId];
+      if (this._renderer) {
+        this._renderer.render({
+          width: this._config.format.width,
+          height: this._config.format.height,
+          time: this._time,
+          seed: this._config.seed,
+          palette: this._config.palette,
+          parameters: this._config.parameters,
+          transparent: this._config.transparent
+        });
+        return;
+      }
+      if (!this._context || !project.render) return;
       this._context.setTransform(1, 0, 0, 1, 0, 0);
       this._context.globalAlpha = 1;
       this._context.clearRect(0, 0, this._canvas.width, this._canvas.height);
-      renderCauceProject(this._config.projectId, this._context, {
+      project.render(this._context, {
         width: this._canvas.width,
         height: this._canvas.height,
         time: this._time,
