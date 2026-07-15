@@ -10,6 +10,7 @@ import {
   type SavedProjectRecord
 } from "./core/storage";
 import type { EngineState, ProjectDefinition, RangeControlDefinition } from "./core/types";
+import { createDefaultView, normalizeView, viewUsesDefaults } from "./core/view";
 import { exportAlphaWebM, supportsAlphaWebM } from "./core/video-export";
 import { createPresetDownload, parseSharedPreset } from "./core/preset";
 import { PROJECTS, getProject } from "./projects";
@@ -34,11 +35,15 @@ const storageError = byId<HTMLParagraphElement>("storage-error");
 const deleteProjectDialog = byId<HTMLDialogElement>("delete-project-dialog");
 const confirmDeleteProjectButton = byId<HTMLButtonElement>("confirm-delete-project-button");
 const projectControls = byId<HTMLDivElement>("project-controls");
+const appearanceSection = byId<HTMLElement>("appearance-section");
+const appearanceControls = byId<HTMLDivElement>("appearance-controls");
 const resetFormulaButton = byId<HTMLButtonElement>("reset-formula-button");
 const backgroundColor = byId<HTMLInputElement>("background-color");
 const foregroundColor = byId<HTMLInputElement>("foreground-color");
+const accentColor = byId<HTMLInputElement>("accent-color");
 const backgroundColorValue = byId<HTMLOutputElement>("background-color-value");
 const foregroundColorValue = byId<HTMLOutputElement>("foreground-color-value");
+const accentColorValue = byId<HTMLOutputElement>("accent-color-value");
 const speedInput = byId<HTMLInputElement>("speed-input");
 const speedValue = byId<HTMLOutputElement>("speed-value");
 const durationInput = byId<HTMLInputElement>("duration-input");
@@ -77,10 +82,20 @@ const canvas = byId<HTMLCanvasElement>("cauce-canvas");
 const threeCanvas = byId<HTMLCanvasElement>("cauce-three-canvas");
 const canvasMessage = byId<HTMLParagraphElement>("canvas-message");
 const canvasError = byId<HTMLParagraphElement>("canvas-error");
+const viewportHud = byId<HTMLElement>("viewport-hud");
+const viewportValue = byId<HTMLOutputElement>("viewport-value");
+const viewportOrbitButton = byId<HTMLButtonElement>("viewport-orbit-button");
+const viewportPanButton = byId<HTMLButtonElement>("viewport-pan-button");
+const viewportZoomOutButton = byId<HTMLButtonElement>("viewport-zoom-out-button");
+const viewportZoomInButton = byId<HTMLButtonElement>("viewport-zoom-in-button");
+const viewportResetButton = byId<HTMLButtonElement>("viewport-reset-button");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const projectParameters = new Map(
   PROJECTS.map((project) => [project.id, { ...project.defaults }])
+);
+const projectViews = new Map(
+  PROJECTS.map((project) => [project.id, createDefaultView()])
 );
 
 let state: EngineState = {
@@ -89,8 +104,10 @@ let state: EngineState = {
   seed: 6437,
   palette: {
     background: "#11110f",
-    foreground: "#f4f3ee"
+    foreground: "#f4f3ee",
+    accent: "#aeb7ff"
   },
+  view: createDefaultView(),
   playback: {
     playing: !reducedMotion.matches,
     speed: 1,
@@ -107,6 +124,11 @@ let currentTime = 0;
 let savedProjects: SavedProjectRecord[] = [];
 let pendingDeleteId = "";
 let videoExportController: AbortController | null = null;
+let viewMode: "orbit" | "pan" = "orbit";
+let queuedViewFrame = 0;
+const activePointers = new Map<number, { x: number; y: number }>();
+let pointerAnchor: { x: number; y: number } | null = null;
+let gestureAnchor: { distance: number; x: number; y: number } | null = null;
 
 const worker = new Worker(new URL("./core/engine.worker.ts", import.meta.url), {
   type: "module"
@@ -176,49 +198,82 @@ function refreshSavedProjects(selectedId = ""): void {
 }
 
 function renderProjectControls(project: ProjectDefinition): void {
-  const fragment = document.createDocumentFragment();
+  const fieldFragment = document.createDocumentFragment();
+  const appearanceFragment = document.createDocumentFragment();
+  let appearanceCount = 0;
 
   for (const control of project.controls) {
     const label = document.createElement("label");
     const inputId = `parameter-${project.id}-${control.key}`;
-    const outputId = `${inputId}-value`;
     label.className = "control-label";
     label.htmlFor = inputId;
+    const currentValue = state.parameters[control.key] ?? control.defaultValue;
 
-    const labelRow = document.createElement("span");
-    labelRow.className = "label-row";
-    const labelText = document.createElement("span");
-    labelText.textContent = control.label;
-    const output = document.createElement("output");
-    output.id = outputId;
-    output.htmlFor = inputId;
-    output.value = formatControlValue(control, state.parameters[control.key] ?? control.defaultValue);
-    labelRow.append(labelText, output);
+    if (control.options?.length) {
+      const labelText = document.createElement("span");
+      labelText.textContent = control.label;
+      const select = document.createElement("select");
+      select.id = inputId;
+      select.replaceChildren(...control.options.map((option) => (
+        makeOption(String(option.value), option.label)
+      )));
+      select.value = String(currentValue);
+      select.addEventListener("change", () => {
+        const nextValue = Number(select.value);
+        state = {
+          ...state,
+          parameters: { ...state.parameters, [control.key]: nextValue }
+        };
+        projectParameters.set(state.projectId, { ...state.parameters });
+        appStatus.textContent = `${control.label}: ${select.selectedOptions[0]?.textContent ?? nextValue}.`;
+        postState();
+      });
+      label.append(labelText, select);
+    } else {
+      const outputId = `${inputId}-value`;
+      const labelRow = document.createElement("span");
+      labelRow.className = "label-row";
+      const labelText = document.createElement("span");
+      labelText.textContent = control.label;
+      const output = document.createElement("output");
+      output.id = outputId;
+      output.htmlFor = inputId;
+      output.value = formatControlValue(control, currentValue);
+      labelRow.append(labelText, output);
 
-    const input = document.createElement("input");
-    input.id = inputId;
-    input.type = "range";
-    input.min = String(control.min);
-    input.max = String(control.max);
-    input.step = String(control.step);
-    input.value = String(state.parameters[control.key] ?? control.defaultValue);
-    input.addEventListener("input", () => {
-      const nextValue = Number(input.value);
-      output.value = formatControlValue(control, nextValue);
-      state = {
-        ...state,
-        parameters: { ...state.parameters, [control.key]: nextValue }
-      };
-      projectParameters.set(state.projectId, { ...state.parameters });
-      appStatus.textContent = `${control.label}: ${output.value}.`;
-      postState();
-    });
+      const input = document.createElement("input");
+      input.id = inputId;
+      input.type = "range";
+      input.min = String(control.min);
+      input.max = String(control.max);
+      input.step = String(control.step);
+      input.value = String(currentValue);
+      input.addEventListener("input", () => {
+        const nextValue = Number(input.value);
+        output.value = formatControlValue(control, nextValue);
+        state = {
+          ...state,
+          parameters: { ...state.parameters, [control.key]: nextValue }
+        };
+        projectParameters.set(state.projectId, { ...state.parameters });
+        appStatus.textContent = `${control.label}: ${output.value}.`;
+        postState();
+      });
 
-    label.append(labelRow, input);
-    fragment.appendChild(label);
+      label.append(labelRow, input);
+    }
+
+    if (control.group === "appearance") {
+      appearanceFragment.appendChild(label);
+      appearanceCount += 1;
+    } else {
+      fieldFragment.appendChild(label);
+    }
   }
 
-  projectControls.replaceChildren(fragment);
+  projectControls.replaceChildren(fieldFragment);
+  appearanceControls.replaceChildren(appearanceFragment);
+  appearanceSection.hidden = appearanceCount === 0;
 }
 
 function updatePlaybackButton(): void {
@@ -233,6 +288,68 @@ function formulaUsesDefaults(project: ProjectDefinition): boolean {
   ));
 }
 
+function updateViewportHud(project = getProject(state.projectId)): void {
+  const enabled = project.viewControls === true;
+  viewportHud.hidden = !enabled;
+  canvasStage.classList.toggle("is-view-interactive", enabled);
+  canvasStage.tabIndex = enabled ? 0 : -1;
+  canvasStage.setAttribute(
+    "aria-label",
+    enabled
+      ? `Vista interactiva de ${project.name}. Arrastra para orbitar, usa Mayús para mover y la rueda para zoom.`
+      : `Vista de ${project.name}.`
+  );
+  if (!enabled) return;
+  viewportOrbitButton.setAttribute("aria-pressed", String(viewMode === "orbit"));
+  viewportPanButton.setAttribute("aria-pressed", String(viewMode === "pan"));
+  viewportResetButton.disabled = viewUsesDefaults(state.view);
+  const panX = Math.round(state.view.panX * 100);
+  const panY = Math.round(state.view.panY * 100);
+  viewportValue.value = `${Math.round(state.view.zoom * 100)}% · ${Math.round(state.view.orbitYaw)}° / ${Math.round(state.view.orbitPitch)}° · ${panX}, ${panY}`;
+}
+
+function scheduleViewState(): void {
+  if (queuedViewFrame) return;
+  queuedViewFrame = window.requestAnimationFrame(() => {
+    queuedViewFrame = 0;
+    post({ type: "state", state });
+  });
+}
+
+function setView(nextView: Partial<EngineState["view"]>, status = ""): void {
+  state = {
+    ...state,
+    view: normalizeView({ ...state.view, ...nextView })
+  };
+  projectViews.set(state.projectId, { ...state.view });
+  updateViewportHud();
+  scheduleViewState();
+  if (status) appStatus.textContent = status;
+}
+
+function setViewMode(mode: "orbit" | "pan"): void {
+  viewMode = mode;
+  updateViewportHud();
+  appStatus.textContent = mode === "orbit"
+    ? "Vista: arrastra para orbitar."
+    : "Vista: arrastra para mover el encuadre.";
+}
+
+function zoomView(factor: number): void {
+  setView(
+    { zoom: state.view.zoom * factor },
+    `Zoom ${Math.round(normalizeView({ ...state.view, zoom: state.view.zoom * factor }).zoom * 100)}%.`
+  );
+}
+
+function resetView(): void {
+  state = { ...state, view: createDefaultView() };
+  projectViews.set(state.projectId, { ...state.view });
+  updateViewportHud();
+  scheduleViewState();
+  appStatus.textContent = "Encuadre restablecido.";
+}
+
 function updateStaticUi(): void {
   const project = getProject(state.projectId);
   const format = getOutputFormat(state.formatKey);
@@ -243,8 +360,10 @@ function updateStaticUi(): void {
   formatSelect.value = state.formatKey;
   backgroundColor.value = state.palette.background;
   foregroundColor.value = state.palette.foreground;
+  accentColor.value = state.palette.accent;
   backgroundColorValue.value = state.palette.background.toUpperCase();
   foregroundColorValue.value = state.palette.foreground.toUpperCase();
+  accentColorValue.value = state.palette.accent.toUpperCase();
   speedInput.value = String(state.playback.speed);
   speedValue.value = `${state.playback.speed.toFixed(2)}×`;
   durationInput.value = String(state.playback.loopSeconds);
@@ -255,12 +374,15 @@ function updateStaticUi(): void {
   threeCanvas.classList.toggle("is-active", usesThree);
   canvas.setAttribute("aria-hidden", String(usesThree));
   threeCanvas.setAttribute("aria-hidden", String(!usesThree));
+  updateViewportHud(project);
   updatePlaybackButton();
 }
 
 function changeProject(projectId: string): void {
+  projectViews.set(state.projectId, { ...state.view });
   const project = getProject(projectId);
   const parameters = projectParameters.get(project.id) ?? { ...project.defaults };
+  const view = projectViews.get(project.id) ?? createDefaultView();
   state = {
     ...state,
     projectId: project.id,
@@ -269,7 +391,8 @@ function changeProject(projectId: string): void {
       ...state.playback,
       loopSeconds: project.preferredLoopSeconds ?? state.playback.loopSeconds
     },
-    parameters: { ...parameters }
+    parameters: { ...parameters },
+    view: { ...view }
   };
   renderProjectControls(project);
   videoFpsSelect.value = String(project.preferredFps);
@@ -285,10 +408,10 @@ function setPlaying(playing: boolean): void {
   postState();
 }
 
-function setPalette(background: string, foreground: string): void {
+function setPalette(background: string, foreground: string, accent = state.palette.accent): void {
   state = {
     ...state,
-    palette: { background, foreground }
+    palette: { background, foreground, accent }
   };
   postState();
 }
@@ -319,6 +442,7 @@ function applySavedProject(record: SavedProjectRecord): void {
   state = normalizeCompatibleState(record.state);
   currentTime = clamp(record.time, 0, 0.999999);
   projectParameters.set(state.projectId, { ...state.parameters });
+  projectViews.set(state.projectId, { ...state.view });
   const project = getProject(state.projectId);
   renderProjectControls(project);
   videoFpsSelect.value = String(project.preferredFps);
@@ -340,9 +464,11 @@ function normalizeCompatibleState(candidate: EngineState): EngineState {
   }
 
   const colorPattern = /^#[0-9a-f]{6}$/i;
+  const accent = candidate.palette.accent ?? candidate.palette.foreground;
   if (
     !colorPattern.test(candidate.palette.background) ||
-    !colorPattern.test(candidate.palette.foreground)
+    !colorPattern.test(candidate.palette.foreground) ||
+    !colorPattern.test(accent)
   ) {
     throw new Error("El preset contiene una paleta de color no válida.");
   }
@@ -373,8 +499,10 @@ function normalizeCompatibleState(candidate: EngineState): EngineState {
     seed: Math.round(clamp(candidate.seed, 0, 4294967295)),
     palette: {
       background: candidate.palette.background.toLowerCase(),
-      foreground: candidate.palette.foreground.toLowerCase()
+      foreground: candidate.palette.foreground.toLowerCase(),
+      accent: accent.toLowerCase()
     },
+    view: normalizeView(candidate.view),
     playback: {
       playing: candidate.playback.playing,
       speed: clamp(candidate.playback.speed, 0.25, 2),
@@ -557,13 +685,18 @@ seedInput.addEventListener("change", () => {
 });
 
 backgroundColor.addEventListener("input", () => {
-  setPalette(backgroundColor.value, state.palette.foreground);
+  setPalette(backgroundColor.value, state.palette.foreground, state.palette.accent);
   appStatus.textContent = "Color de fondo actualizado.";
 });
 
 foregroundColor.addEventListener("input", () => {
-  setPalette(state.palette.background, foregroundColor.value);
+  setPalette(state.palette.background, foregroundColor.value, state.palette.accent);
   appStatus.textContent = "Color de trazo actualizado.";
+});
+
+accentColor.addEventListener("input", () => {
+  setPalette(state.palette.background, state.palette.foreground, accentColor.value);
+  appStatus.textContent = "Color de acento actualizado.";
 });
 
 speedInput.addEventListener("input", () => {
@@ -618,7 +751,7 @@ newSeedButton.addEventListener("click", () => {
 });
 
 invertButton.addEventListener("click", () => {
-  setPalette(state.palette.foreground, state.palette.background);
+  setPalette(state.palette.foreground, state.palette.background, state.palette.accent);
   appStatus.textContent = "Paleta invertida.";
 });
 
@@ -695,6 +828,171 @@ cancelAlphaVideoButton.addEventListener("click", () => {
   cancelAlphaVideoButton.disabled = true;
   videoExportStatus.textContent = "Cancelando exportación…";
 });
+
+function currentProjectHasViewControls(): boolean {
+  return getProject(state.projectId).viewControls === true;
+}
+
+function pointerPair(): Array<{ x: number; y: number }> {
+  return Array.from(activePointers.values()).slice(0, 2);
+}
+
+function createGestureAnchor(): typeof gestureAnchor {
+  const pointers = pointerPair();
+  if (pointers.length < 2) return null;
+  const first = pointers[0]!;
+  const second = pointers[1]!;
+  return {
+    distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+    x: (first.x + second.x) * 0.5,
+    y: (first.y + second.y) * 0.5
+  };
+}
+
+canvasStage.addEventListener("pointerdown", (event) => {
+  if (!currentProjectHasViewControls()) return;
+  if (event.target instanceof Element && event.target.closest(".viewport-hud")) return;
+  if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 2) return;
+  event.preventDefault();
+  canvasStage.focus({ preventScroll: true });
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  canvasStage.setPointerCapture(event.pointerId);
+  canvasStage.classList.add("is-dragging");
+  if (activePointers.size >= 2) {
+    gestureAnchor = createGestureAnchor();
+    pointerAnchor = null;
+  } else {
+    pointerAnchor = { x: event.clientX, y: event.clientY };
+  }
+});
+
+canvasStage.addEventListener("pointermove", (event) => {
+  if (!activePointers.has(event.pointerId) || !currentProjectHasViewControls()) return;
+  event.preventDefault();
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const bounds = canvasStage.getBoundingClientRect();
+
+  if (activePointers.size >= 2) {
+    const nextGesture = createGestureAnchor();
+    if (gestureAnchor && nextGesture) {
+      setView({
+        zoom: state.view.zoom * nextGesture.distance / gestureAnchor.distance,
+        panX: state.view.panX + (nextGesture.x - gestureAnchor.x) / Math.max(1, bounds.width),
+        panY: state.view.panY + (nextGesture.y - gestureAnchor.y) / Math.max(1, bounds.height)
+      });
+    }
+    gestureAnchor = nextGesture;
+    return;
+  }
+
+  if (!pointerAnchor) {
+    pointerAnchor = { x: event.clientX, y: event.clientY };
+    return;
+  }
+  const deltaX = event.clientX - pointerAnchor.x;
+  const deltaY = event.clientY - pointerAnchor.y;
+  const shouldPan = (
+    viewMode === "pan" ||
+    event.shiftKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    (event.buttons & 2) === 2
+  );
+  if (shouldPan) {
+    setView({
+      panX: state.view.panX + deltaX / Math.max(1, bounds.width),
+      panY: state.view.panY + deltaY / Math.max(1, bounds.height)
+    });
+  } else {
+    setView({
+      orbitYaw: state.view.orbitYaw + deltaX * 0.35,
+      orbitPitch: state.view.orbitPitch - deltaY * 0.3
+    });
+  }
+  pointerAnchor = { x: event.clientX, y: event.clientY };
+});
+
+function finishViewPointer(event: PointerEvent): void {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.delete(event.pointerId);
+  if (canvasStage.hasPointerCapture(event.pointerId)) {
+    canvasStage.releasePointerCapture(event.pointerId);
+  }
+  gestureAnchor = activePointers.size >= 2 ? createGestureAnchor() : null;
+  const remaining = activePointers.values().next().value as { x: number; y: number } | undefined;
+  pointerAnchor = remaining ? { ...remaining } : null;
+  if (activePointers.size === 0) canvasStage.classList.remove("is-dragging");
+}
+
+canvasStage.addEventListener("pointerup", finishViewPointer);
+canvasStage.addEventListener("pointercancel", finishViewPointer);
+
+canvasStage.addEventListener("wheel", (event) => {
+  if (!currentProjectHasViewControls()) return;
+  if (event.target instanceof Element && event.target.closest(".viewport-hud")) return;
+  event.preventDefault();
+  zoomView(Math.exp(-event.deltaY * 0.0012));
+}, { passive: false });
+
+canvasStage.addEventListener("contextmenu", (event) => {
+  if (currentProjectHasViewControls()) event.preventDefault();
+});
+
+canvasStage.addEventListener("keydown", (event) => {
+  if (!currentProjectHasViewControls() || event.target !== canvasStage) return;
+  const pan = viewMode === "pan" || event.shiftKey;
+  if (event.key === "+" || event.key === "=" || event.code === "NumpadAdd") {
+    event.preventDefault();
+    zoomView(1.12);
+    return;
+  }
+  if (event.key === "-" || event.code === "NumpadSubtract") {
+    event.preventDefault();
+    zoomView(1 / 1.12);
+    return;
+  }
+  if (event.key === "0") {
+    event.preventDefault();
+    resetView();
+    return;
+  }
+  if (event.key.toLowerCase() === "o") {
+    event.preventDefault();
+    setViewMode("orbit");
+    return;
+  }
+  if (event.key.toLowerCase() === "m") {
+    event.preventDefault();
+    setViewMode("pan");
+    return;
+  }
+  const directions: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1]
+  };
+  const direction = directions[event.key];
+  if (!direction) return;
+  event.preventDefault();
+  if (pan) {
+    setView({
+      panX: state.view.panX + direction[0] * 0.02,
+      panY: state.view.panY + direction[1] * 0.02
+    });
+  } else {
+    setView({
+      orbitYaw: state.view.orbitYaw + direction[0] * 3,
+      orbitPitch: state.view.orbitPitch - direction[1] * 3
+    });
+  }
+});
+
+viewportOrbitButton.addEventListener("click", () => setViewMode("orbit"));
+viewportPanButton.addEventListener("click", () => setViewMode("pan"));
+viewportZoomOutButton.addEventListener("click", () => zoomView(1 / 1.15));
+viewportZoomInButton.addEventListener("click", () => zoomView(1.15));
+viewportResetButton.addEventListener("click", resetView);
 
 exportWebButton.addEventListener("click", async () => {
   exportWebButton.disabled = true;

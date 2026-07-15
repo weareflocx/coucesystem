@@ -100,6 +100,7 @@ function createProjectFrame(): ProjectFrame {
     time: playhead,
     seed: state.seed,
     palette: state.palette,
+    view: state.view,
     parameters: state.parameters
   };
 }

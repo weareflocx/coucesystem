@@ -1,5 +1,13 @@
 import { mobiusFlowProject } from "./mobius-flow.js";
-import { TAU, clamp, parameter, positiveModulo } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  appearanceSample,
+  clamp,
+  paletteAccent,
+  parameter,
+  positiveModulo
+} from "./shared.js";
 
 const PROJECT_ID = "mobius-flow-1-1";
 const SURFACE_SEGMENTS = 192;
@@ -41,29 +49,52 @@ function createSurfaceGeometry(THREE) {
   const positionAttribute = new THREE.BufferAttribute(positions, 3);
   positionAttribute.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("position", positionAttribute);
+  const colorAttribute = new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3);
+  colorAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("color", colorAttribute);
   geometry.setIndex(indices);
   return geometry;
 }
 
-function updateSurfaceGeometry(geometry, frame, cycle) {
+function writeAppearanceColor(target, offset, fromColor, toColor, backgroundColor, sample) {
+  const red = fromColor.r + (toColor.r - fromColor.r) * sample.gradientMix;
+  const green = fromColor.g + (toColor.g - fromColor.g) * sample.gradientMix;
+  const blue = fromColor.b + (toColor.b - fromColor.b) * sample.gradientMix;
+  target[offset] = red + (backgroundColor.r - red) * sample.textureDim;
+  target[offset + 1] = green + (backgroundColor.g - green) * sample.textureDim;
+  target[offset + 2] = blue + (backgroundColor.b - blue) * sample.textureDim;
+}
+
+function updateSurfaceGeometry(geometry, frame, cycle, colors) {
   const halfTwists = oddInteger(parameter(frame, "halfTwists", 1), 1);
   const breathing = parameter(frame, "breathing", 0.06);
   const width = parameter(frame, "width", 0.46) * (1 + breathing * Math.sin(cycle));
   const circulation = Math.round(parameter(frame, "circulation", 1));
   const phase = circulation * cycle * 0.5;
   const positions = geometry.getAttribute("position").array;
+  const colorValues = geometry.getAttribute("color").array;
   let offset = 0;
 
   for (let uIndex = 0; uIndex <= SURFACE_SEGMENTS; uIndex += 1) {
     const u = TAU * uIndex / SURFACE_SEGMENTS;
+    const sample = appearanceSample(frame, uIndex / SURFACE_SEGMENTS, colors.appearance);
     for (let vIndex = 0; vIndex <= WIDTH_SEGMENTS; vIndex += 1) {
       const v = -width + 2 * width * vIndex / WIDTH_SEGMENTS;
       writeMobiusPoint(positions, offset, u, v, halfTwists, phase);
+      writeAppearanceColor(
+        colorValues,
+        offset,
+        colors.surfaceFrom,
+        colors.surfaceTo,
+        colors.background,
+        sample
+      );
       offset += 3;
     }
   }
 
   geometry.getAttribute("position").needsUpdate = true;
+  geometry.getAttribute("color").needsUpdate = true;
   geometry.computeVertexNormals();
   return { width, halfTwists, phase };
 }
@@ -75,14 +106,18 @@ function createCurrentGeometry(THREE) {
   const positionAttribute = new THREE.BufferAttribute(positions, 3);
   positionAttribute.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("position", positionAttribute);
+  const colorAttribute = new THREE.BufferAttribute(new Float32Array(maximumSegments * 2 * 3), 3);
+  colorAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("color", colorAttribute);
   geometry.setDrawRange(0, 0);
   return geometry;
 }
 
-function updateCurrentGeometry(geometry, frame, surface) {
+function updateCurrentGeometry(geometry, frame, surface, colors) {
   const visibleCurrentCount = clamp(oddInteger(parameter(frame, "currents", 11), 11), 3, 35);
   const sideCurrentCount = (visibleCurrentCount - 1) / 2;
   const positions = geometry.getAttribute("position").array;
+  const colorValues = geometry.getAttribute("color").array;
   let offset = 0;
 
   function addCurrent(v, revolutions, samples) {
@@ -92,6 +127,22 @@ function updateCurrentGeometry(geometry, frame, surface) {
       const u1 = end * (step + 1) / samples;
       writeMobiusPoint(positions, offset, u0, v, surface.halfTwists, surface.phase);
       writeMobiusPoint(positions, offset + 3, u1, v, surface.halfTwists, surface.phase);
+      writeAppearanceColor(
+        colorValues,
+        offset,
+        colors.foreground,
+        colors.accent,
+        colors.background,
+        appearanceSample(frame, step / samples, colors.appearance)
+      );
+      writeAppearanceColor(
+        colorValues,
+        offset + 3,
+        colors.foreground,
+        colors.accent,
+        colors.background,
+        appearanceSample(frame, (step + 1) / samples, colors.appearance)
+      );
       offset += 6;
     }
   }
@@ -102,6 +153,7 @@ function updateCurrentGeometry(geometry, frame, surface) {
   }
 
   geometry.getAttribute("position").needsUpdate = true;
+  geometry.getAttribute("color").needsUpdate = true;
   geometry.setDrawRange(0, offset / 3);
 }
 
@@ -126,6 +178,7 @@ async function createMobiusRenderer(canvas) {
   const surfaceGeometry = createSurfaceGeometry(THREE);
   const surfaceMaterial = new THREE.MeshStandardMaterial({
     color: 0xffffff,
+    vertexColors: true,
     roughness: 0.72,
     metalness: 0,
     side: THREE.DoubleSide,
@@ -140,6 +193,7 @@ async function createMobiusRenderer(canvas) {
   const currentGeometry = createCurrentGeometry(THREE);
   const currentMaterial = new THREE.LineBasicMaterial({
     color: 0xffffff,
+    vertexColors: true,
     transparent: true,
     opacity: 1,
     depthTest: true,
@@ -160,7 +214,10 @@ async function createMobiusRenderer(canvas) {
 
   const backgroundColor = new THREE.Color();
   const foregroundColor = new THREE.Color();
-  const surfaceColor = new THREE.Color();
+  const accentColor = new THREE.Color();
+  const surfaceFromColor = new THREE.Color();
+  const surfaceToColor = new THREE.Color();
+  const cameraTarget = new THREE.Vector3();
   let viewport = {
     width: 1,
     height: 1,
@@ -184,8 +241,24 @@ async function createMobiusRenderer(canvas) {
   function render(frame) {
     if (disposed) return;
     const cycle = positiveModulo(frame.time, 1) * TAU;
-    const surface = updateSurfaceGeometry(surfaceGeometry, frame, cycle);
-    updateCurrentGeometry(currentGeometry, frame, surface);
+    const appearance = appearanceParameters(frame);
+
+    backgroundColor.set(frame.palette.background);
+    foregroundColor.set(frame.palette.foreground);
+    accentColor.set(paletteAccent(frame));
+    const surfaceTone = parameter(frame, "surfaceTone", 0.36);
+    surfaceFromColor.copy(backgroundColor).lerp(foregroundColor, surfaceTone);
+    surfaceToColor.copy(backgroundColor).lerp(accentColor, surfaceTone);
+    const colors = {
+      appearance,
+      background: backgroundColor,
+      foreground: foregroundColor,
+      accent: accentColor,
+      surfaceFrom: surfaceFromColor,
+      surfaceTo: surfaceToColor
+    };
+    const surface = updateSurfaceGeometry(surfaceGeometry, frame, cycle, colors);
+    updateCurrentGeometry(currentGeometry, frame, surface, colors);
 
     const tilt = parameter(frame, "tilt", 57) * Math.PI / 180;
     const yaw = (
@@ -195,20 +268,29 @@ async function createMobiusRenderer(canvas) {
     const rotation = parameter(frame, "rotation", -30) * Math.PI / 180;
     group.rotation.set(tilt, yaw, rotation, "XYZ");
 
+    const view = frame.view ?? {};
+    const orbitYaw = (Number.isFinite(view.orbitYaw) ? view.orbitYaw : 0) * Math.PI / 180;
+    const orbitPitch = (Number.isFinite(view.orbitPitch) ? view.orbitPitch : 0) * Math.PI / 180;
+    const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
+    const distance = parameter(frame, "cameraDistance", 5.1) / zoom;
+    const cosinePitch = Math.cos(orbitPitch);
+    cameraTarget.set(
+      -(Number.isFinite(view.panX) ? view.panX : 0) * 3,
+      (Number.isFinite(view.panY) ? view.panY : 0) * 3,
+      0
+    );
     camera.fov = parameter(frame, "fov", 38);
-    camera.position.set(0, 0, parameter(frame, "cameraDistance", 5.1));
-    camera.lookAt(0, 0, 0);
+    camera.position.set(
+      cameraTarget.x + Math.sin(orbitYaw) * cosinePitch * distance,
+      cameraTarget.y + Math.sin(orbitPitch) * distance,
+      cameraTarget.z + Math.cos(orbitYaw) * cosinePitch * distance
+    );
+    camera.lookAt(cameraTarget);
     camera.updateProjectionMatrix();
 
-    backgroundColor.set(frame.palette.background);
-    foregroundColor.set(frame.palette.foreground);
-    surfaceColor.copy(backgroundColor).lerp(
-      foregroundColor,
-      parameter(frame, "surfaceTone", 0.36)
-    );
-    surfaceMaterial.color.copy(surfaceColor);
+    surfaceMaterial.color.set(0xffffff);
     surfaceMaterial.roughness = parameter(frame, "roughness", 0.72);
-    currentMaterial.color.copy(foregroundColor);
+    currentMaterial.color.set(0xffffff);
     const light = parameter(frame, "light", 1.25);
     hemisphereLight.intensity = 0.72 * light;
     keyLight.intensity = 1.7 * light;
@@ -271,7 +353,13 @@ function toSvg(frame) {
       precession: parameter(frame, "precession", 3.5),
       perspective: 0.5,
       depthFade: 0.34,
-      stroke: 1.1
+      stroke: 1.1,
+      gradientStrength: parameter(frame, "gradientStrength", 0.7),
+      gradientAngle: parameter(frame, "gradientAngle", -35),
+      textureMode: parameter(frame, "textureMode", 0),
+      textureScale: parameter(frame, "textureScale", 4),
+      textureStrength: parameter(frame, "textureStrength", 0),
+      textureMotion: parameter(frame, "textureMotion", 1)
     }
   });
   return source
@@ -288,6 +376,7 @@ export const mobiusFlow11Project = {
   preferredFps: 60,
   preferredFormatKey: "square",
   preferredLoopSeconds: 7,
+  viewControls: true,
   controls: [
     { key: "currents", label: "Corrientes", min: 3, max: 35, step: 2, defaultValue: 11, digits: 0 },
     { key: "width", label: "Anchura de banda", min: 0.16, max: 0.72, step: 0.01, defaultValue: 0.46, digits: 2 },
@@ -300,9 +389,19 @@ export const mobiusFlow11Project = {
     { key: "precession", label: "Precesión", min: 0, max: 20, step: 0.5, defaultValue: 3.5, digits: 1, suffix: "°" },
     { key: "fov", label: "Campo de visión", min: 20, max: 72, step: 1, defaultValue: 38, digits: 0, suffix: "°" },
     { key: "cameraDistance", label: "Distancia de cámara", min: 3.4, max: 8, step: 0.05, defaultValue: 5.1, digits: 2 },
-    { key: "surfaceTone", label: "Tono de superficie", min: 0.08, max: 0.9, step: 0.01, defaultValue: 0.36, digits: 2 },
-    { key: "roughness", label: "Rugosidad", min: 0.05, max: 1, step: 0.01, defaultValue: 0.72, digits: 2 },
-    { key: "light", label: "Luz", min: 0.2, max: 2.5, step: 0.05, defaultValue: 1.25, digits: 2 }
+    { key: "surfaceTone", label: "Tono de superficie", min: 0.08, max: 0.9, step: 0.01, defaultValue: 0.36, digits: 2, group: "appearance" },
+    { key: "roughness", label: "Rugosidad", min: 0.05, max: 1, step: 0.01, defaultValue: 0.72, digits: 2, group: "appearance" },
+    { key: "light", label: "Luz", min: 0.2, max: 2.5, step: 0.05, defaultValue: 1.25, digits: 2, group: "appearance" },
+    { key: "gradientStrength", label: "Gradiente", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "appearance" },
+    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "appearance" },
+    { key: "textureMode", label: "Textura", min: 0, max: 2, step: 1, defaultValue: 0, digits: 0, group: "appearance", options: [
+      { value: 0, label: "Lisa" },
+      { value: 1, label: "Flujo" },
+      { value: 2, label: "Grano" }
+    ] },
+    { key: "textureScale", label: "Escala de textura", min: 1, max: 12, step: 1, defaultValue: 4, digits: 0, group: "appearance" },
+    { key: "textureStrength", label: "Intensidad de textura", min: 0, max: 1, step: 0.01, defaultValue: 0, digits: 2, group: "appearance" },
+    { key: "textureMotion", label: "Movimiento de textura", min: -4, max: 4, step: 1, defaultValue: 1, digits: 0, group: "appearance" }
   ],
   defaults: {
     currents: 11,
@@ -318,7 +417,13 @@ export const mobiusFlow11Project = {
     cameraDistance: 5.1,
     surfaceTone: 0.36,
     roughness: 0.72,
-    light: 1.25
+    light: 1.25,
+    gradientStrength: 0.7,
+    gradientAngle: -35,
+    textureMode: 0,
+    textureScale: 4,
+    textureStrength: 0,
+    textureMotion: 1
   },
   createRenderer: createMobiusRenderer,
   toSvg

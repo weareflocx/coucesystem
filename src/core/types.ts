@@ -29,6 +29,15 @@ export interface OutputFormat {
 export interface Palette {
   background: string;
   foreground: string;
+  accent: string;
+}
+
+export interface ViewState {
+  zoom: number;
+  panX: number;
+  panY: number;
+  orbitYaw: number;
+  orbitPitch: number;
 }
 
 export interface PlaybackState {
@@ -42,6 +51,7 @@ export interface EngineState {
   formatKey: string;
   seed: number;
   palette: Palette;
+  view: ViewState;
   playback: PlaybackState;
   parameters: Record<string, number>;
 }
@@ -55,6 +65,8 @@ export interface RangeControlDefinition {
   defaultValue: number;
   digits?: number;
   suffix?: string;
+  group?: string;
+  options?: Array<{ value: number; label: string }>;
 }
 
 export interface ProjectFrame {
@@ -63,6 +75,7 @@ export interface ProjectFrame {
   time: number;
   seed: number;
   palette: Palette;
+  view: ViewState;
   parameters: Record<string, number>;
   transparent?: boolean;
 }
@@ -76,6 +89,7 @@ export interface ProjectDefinition {
   preferredFps: number;
   preferredFormatKey?: string;
   preferredLoopSeconds?: number;
+  viewControls?: boolean;
   controls: RangeControlDefinition[];
   defaults: Record<string, number>;
   render?(context: CauceContext, frame: ProjectFrame): void;

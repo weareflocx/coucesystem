@@ -20,6 +20,14 @@ function isNumberRecord(value: unknown): value is Record<string, number> {
   return Object.values(value).every(isFiniteNumber);
 }
 
+function isCompatibleView(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return ["zoom", "panX", "panY", "orbitYaw", "orbitPitch"]
+    .every((key) => isFiniteNumber(candidate[key]));
+}
+
 export function isEngineState(value: unknown): value is EngineState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<EngineState>;
@@ -31,6 +39,8 @@ export function isEngineState(value: unknown): value is EngineState {
     candidate.palette !== null &&
     typeof candidate.palette.background === "string" &&
     typeof candidate.palette.foreground === "string" &&
+    (candidate.palette.accent === undefined || typeof candidate.palette.accent === "string") &&
+    isCompatibleView(candidate.view) &&
     typeof candidate.playback === "object" &&
     candidate.playback !== null &&
     typeof candidate.playback.playing === "boolean" &&

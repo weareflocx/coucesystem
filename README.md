@@ -32,6 +32,8 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `04 · Orbital Basin`: órbitas cerradas sobre una cuenca planar con dos tangencias compartidas.
 - `05 · Möbius Flow`: corrientes cerradas sobre una banda de Möbius paramétrica, con una cara y un único borde.
 - `05.1 · Möbius Flow 1.1`: malla Three.js de doble cara con depth buffer, iluminación y corrientes 3D.
+- Apariencia Möbius compartida: color de acento, gradiente orientable y texturas procedurales `Lisa`, `Flujo` y `Grano`.
+- HUD de vista dentro del canvas: órbita, paneo, zoom, gestos táctiles, teclado y reencuadre; el estado se conserva en guardados y exportaciones.
 - `06 · Confluence Weave`: cauces orbitales convertidos en un campo de densidad cuyos contactos forman puentes y membranas vectoriales.
 - Guardados locales v2 con migración de v1 e intercambio mediante `.cauce.json`.
 - Exportación SVG del fotograma actual.
@@ -43,3 +45,4 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 La exportación transparente verifica en tiempo de ejecución que el navegador pueda codificar VP9 conservando el canal alpha. El Web Component reutiliza los renderers de Studio, es responsive, se pausa fuera de pantalla y no tiene dependencias externas. HEVC alpha y secuencia PNG siguen documentados en [`docs/export-roadmap.md`](docs/export-roadmap.md).
 
 El contrato para añadir proyectos está documentado en [`docs/project-contract.md`](docs/project-contract.md).
+Las decisiones de apariencia y navegación están documentadas en [`docs/appearance-and-view.md`](docs/appearance-and-view.md).

@@ -36,6 +36,7 @@ function normalizeConfig(value) {
 
   const format = value.format && typeof value.format === "object" ? value.format : {};
   const palette = value.palette && typeof value.palette === "object" ? value.palette : {};
+  const view = value.view && typeof value.view === "object" ? value.view : {};
   const playback = value.playback && typeof value.playback === "object" ? value.playback : {};
   const suppliedParameters = value.parameters && typeof value.parameters === "object"
     ? value.parameters
@@ -56,7 +57,17 @@ function normalizeConfig(value) {
     seed: Math.round(clamp(finiteNumber(value.seed, 0), 0, 4294967295)),
     palette: {
       background: typeof palette.background === "string" ? palette.background : "#11110f",
-      foreground: typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee"
+      foreground: typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee",
+      accent: typeof palette.accent === "string"
+        ? palette.accent
+        : (typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee")
+    },
+    view: {
+      zoom: clamp(finiteNumber(view.zoom, 1), 0.35, 4),
+      panX: clamp(finiteNumber(view.panX, 0), -1, 1),
+      panY: clamp(finiteNumber(view.panY, 0), -1, 1),
+      orbitYaw: clamp(finiteNumber(view.orbitYaw, 0), -180, 180),
+      orbitPitch: clamp(finiteNumber(view.orbitPitch, 0), -80, 80)
     },
     playback: {
       autoplay: playback.autoplay !== false,
@@ -334,6 +345,7 @@ if (
           time: this._time,
           seed: this._config.seed,
           palette: this._config.palette,
+          view: this._config.view,
           parameters: this._config.parameters,
           transparent: this._config.transparent
         });
@@ -349,6 +361,7 @@ if (
         time: this._time,
         seed: this._config.seed,
         palette: this._config.palette,
+        view: this._config.view,
         parameters: this._config.parameters,
         transparent: this._config.transparent
       });

@@ -17,6 +17,7 @@ interface EmbedConfigV1 {
   format: { width: number; height: number };
   seed: number;
   palette: EngineState["palette"];
+  view: EngineState["view"];
   playback: {
     autoplay: boolean;
     speed: number;
@@ -44,6 +45,7 @@ function createConfig(state: EngineState, time: number, transparent: boolean): E
     format: { width: format.width, height: format.height },
     seed: state.seed,
     palette: structuredClone(state.palette),
+    view: structuredClone(state.view),
     playback: {
       autoplay: true,
       speed: state.playback.speed,

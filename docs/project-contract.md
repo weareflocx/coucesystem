@@ -28,6 +28,14 @@ Cada proyecto elige uno de estos contratos:
 
 Studio conserva un canvas por backend y destruye el renderer 3D al volver a un proyecto 2D. Vídeo y Web Component crean instancias independientes mediante el mismo contrato. `toSvg` sigue siendo obligatorio también para proyectos 3D y actúa como representación vectorial compatible.
 
+`viewControls: true` activa el HUD compartido. El proyecto debe entonces aplicar `frame.view`:
+
+- `zoom`: escala o distancia de cámara.
+- `panX` y `panY`: desplazamiento normalizado.
+- `orbitYaw` y `orbitPitch`: órbita horizontal y vertical en grados.
+
+Los controles con `group: "appearance"` se muestran en la sección Apariencia. Un control numérico puede declarar `options` para representarse como selector sin cambiar el formato serializable de `parameters`.
+
 ## Alta de un proyecto
 
 1. Crear `src/projects/<project-id>.js`.
@@ -39,6 +47,8 @@ El exportador web empaqueta automáticamente todos los módulos JavaScript de `s
 ## Determinismo
 
 - `frame.time` está normalizado entre `0` y `1`.
+- `frame.palette` incluye `background`, `foreground` y `accent`.
+- `frame.view` es parte del estado determinista, no un ajuste local de la previsualización.
 - `time = 0` y `time = 1` deben producir el mismo fotograma.
 - Toda aleatoriedad debe derivar de `frame.seed` mediante `createRandom`.
 - No usar `Math.random()`, `Date.now()` ni `performance.now()` dentro del renderer.

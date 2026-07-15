@@ -1,4 +1,12 @@
-import { TAU, clamp, parameter, positiveModulo } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  clamp,
+  mixHexColors,
+  paletteAccent,
+  parameter,
+  positiveModulo
+} from "./shared.js";
 
 const PROJECT_ID = "mobius-flow";
 const DEPTH_BINS = 12;
@@ -10,16 +18,21 @@ function oddInteger(value, fallback) {
 }
 
 function createProjector(frame, stripWidth, cycle) {
-  const tilt = parameter(frame, "tilt", 58) * Math.PI / 180;
+  const view = frame.view ?? {};
+  const tilt = (
+    parameter(frame, "tilt", 58) + (Number.isFinite(view.orbitPitch) ? view.orbitPitch : 0)
+  ) * Math.PI / 180;
   const yaw = (
     parameter(frame, "yaw", -16) +
-    parameter(frame, "precession", 4) * Math.sin(cycle)
+    parameter(frame, "precession", 4) * Math.sin(cycle) +
+    (Number.isFinite(view.orbitYaw) ? view.orbitYaw : 0)
   ) * Math.PI / 180;
   const rotation = parameter(frame, "rotation", -32) * Math.PI / 180;
   const perspective = parameter(frame, "perspective", 0.48);
-  const centerX = frame.width * 0.5;
-  const centerY = frame.height * 0.5;
-  const scale = Math.min(frame.width, frame.height) * 0.31;
+  const centerX = frame.width * (0.5 + (Number.isFinite(view.panX) ? view.panX : 0));
+  const centerY = frame.height * (0.5 + (Number.isFinite(view.panY) ? view.panY : 0));
+  const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
+  const scale = Math.min(frame.width, frame.height) * 0.31 * zoom;
   const depthRange = 1 + stripWidth;
 
   const cosineTilt = Math.cos(tilt);
@@ -104,22 +117,56 @@ function opacityForBin(bin, depthFade) {
   return 1 - depthFade * (1 - depth) * 0.82;
 }
 
-function render(context, frame) {
-  const geometry = createGeometry(frame);
-  if (!frame.transparent) {
-    context.fillStyle = frame.palette.background;
-    context.fillRect(0, 0, frame.width, frame.height);
+function gradientGeometry(frame, appearance) {
+  const centerX = frame.width * 0.5;
+  const centerY = frame.height * 0.5;
+  const radius = Math.hypot(frame.width, frame.height) * 0.5;
+  const directionX = Math.cos(appearance.gradientAngle);
+  const directionY = Math.sin(appearance.gradientAngle);
+  return {
+    x1: centerX - directionX * radius,
+    y1: centerY - directionY * radius,
+    x2: centerX + directionX * radius,
+    y2: centerY + directionY * radius
+  };
+}
+
+function createStrokeGradient(context, frame, appearance) {
+  const vector = gradientGeometry(frame, appearance);
+  const gradient = context.createLinearGradient(vector.x1, vector.y1, vector.x2, vector.y2);
+  const accent = mixHexColors(
+    frame.palette.foreground,
+    paletteAccent(frame),
+    appearance.gradientStrength
+  );
+  gradient.addColorStop(0, frame.palette.foreground);
+  gradient.addColorStop(0.5, accent);
+  gradient.addColorStop(1, frame.palette.foreground);
+  return gradient;
+}
+
+function textureStroke(frame, appearance, strokeWidth) {
+  if (appearance.textureMode === 0 || appearance.textureStrength <= 0.001) {
+    return { pattern: [], offset: 0 };
   }
+  const unit = Math.min(frame.width, frame.height) / (10 + appearance.textureScale * 8);
+  if (appearance.textureMode === 1) {
+    return {
+      pattern: [unit * 0.68, unit * 0.32],
+      offset: -positiveModulo(frame.time, 1) * appearance.textureMotion * unit
+    };
+  }
+  return {
+    pattern: [Math.max(strokeWidth * 0.7, 0.5), unit * 0.26, Math.max(strokeWidth * 0.35, 0.35), unit * 0.18],
+    offset: 0
+  };
+}
 
-  context.strokeStyle = frame.palette.foreground;
-  context.lineWidth = geometry.strokeWidth;
-  context.lineCap = "round";
-  context.lineJoin = "round";
-
+function strokeGeometry(context, geometry, baseOpacity) {
   for (let bin = 0; bin < geometry.bins.length; bin += 1) {
     const segments = geometry.bins[bin];
     if (segments.length === 0) continue;
-    context.globalAlpha = opacityForBin(bin, geometry.depthFade);
+    context.globalAlpha = opacityForBin(bin, geometry.depthFade) * baseOpacity;
     context.beginPath();
     for (let index = 0; index < segments.length; index += 4) {
       context.moveTo(segments[index], segments[index + 1]);
@@ -127,6 +174,33 @@ function render(context, frame) {
     }
     context.stroke();
   }
+}
+
+function render(context, frame) {
+  const geometry = createGeometry(frame);
+  const appearance = appearanceParameters(frame);
+  if (!frame.transparent) {
+    context.fillStyle = frame.palette.background;
+    context.fillRect(0, 0, frame.width, frame.height);
+  }
+
+  context.strokeStyle = createStrokeGradient(context, frame, appearance);
+  context.lineWidth = geometry.strokeWidth;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const texture = textureStroke(frame, appearance, geometry.strokeWidth);
+  if (texture.pattern.length > 0) {
+    context.setLineDash([]);
+    strokeGeometry(context, geometry, 1 - appearance.textureStrength * 0.82);
+    context.setLineDash(texture.pattern);
+    context.lineDashOffset = texture.offset;
+    strokeGeometry(context, geometry, appearance.textureStrength);
+  } else {
+    strokeGeometry(context, geometry, 1);
+  }
+  context.setLineDash([]);
+  context.lineDashOffset = 0;
   context.globalAlpha = 1;
 }
 
@@ -140,14 +214,28 @@ function segmentsToPath(segments) {
 
 function toSvg(frame) {
   const geometry = createGeometry(frame);
+  const appearance = appearanceParameters(frame);
+  const vector = gradientGeometry(frame, appearance);
+  const accent = mixHexColors(
+    frame.palette.foreground,
+    paletteAccent(frame),
+    appearance.gradientStrength
+  );
+  const texture = textureStroke(frame, appearance, geometry.strokeWidth);
   const paths = geometry.bins.map((segments, bin) => {
     if (segments.length === 0) return "";
     return `<path d="${segmentsToPath(segments)}" stroke-opacity="${opacityForBin(bin, geometry.depthFade).toFixed(3)}"/>`;
   });
+  const texturePaths = texture.pattern.length > 0
+    ? `<g opacity="${appearance.textureStrength.toFixed(3)}" stroke-dasharray="${texture.pattern.map((value) => value.toFixed(3)).join(" ")}" stroke-dashoffset="${texture.offset.toFixed(3)}">${paths.join("")}</g>`
+    : "";
+  const baseOpacity = texture.pattern.length > 0
+    ? 1 - appearance.textureStrength * 0.82
+    : 1;
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 05 — Möbius Flow</title>${background}<g fill="none" stroke="${frame.palette.foreground}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${paths.join("")}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 05 — Möbius Flow</title><defs><linearGradient id="mobius-flow-gradient" gradientUnits="userSpaceOnUse" x1="${vector.x1.toFixed(2)}" y1="${vector.y1.toFixed(2)}" x2="${vector.x2.toFixed(2)}" y2="${vector.y2.toFixed(2)}"><stop offset="0" stop-color="${frame.palette.foreground}"/><stop offset="0.5" stop-color="${accent}"/><stop offset="1" stop-color="${frame.palette.foreground}"/></linearGradient></defs>${background}<g fill="none" stroke="url(#mobius-flow-gradient)" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round"><g opacity="${baseOpacity.toFixed(3)}">${paths.join("")}</g>${texturePaths}</g></svg>`;
 }
 
 export const mobiusFlowProject = {
@@ -159,6 +247,7 @@ export const mobiusFlowProject = {
   preferredFps: 60,
   preferredFormatKey: "square",
   preferredLoopSeconds: 7,
+  viewControls: true,
   controls: [
     { key: "currents", label: "Corrientes", min: 3, max: 35, step: 2, defaultValue: 15, digits: 0 },
     { key: "width", label: "Anchura de banda", min: 0.16, max: 0.72, step: 0.01, defaultValue: 0.46, digits: 2 },
@@ -170,8 +259,18 @@ export const mobiusFlowProject = {
     { key: "breathing", label: "Respiración", min: 0, max: 0.25, step: 0.01, defaultValue: 0.07, digits: 2 },
     { key: "precession", label: "Precesión", min: 0, max: 20, step: 0.5, defaultValue: 4, digits: 1, suffix: "°" },
     { key: "perspective", label: "Perspectiva", min: 0, max: 0.9, step: 0.01, defaultValue: 0.48, digits: 2 },
-    { key: "depthFade", label: "Profundidad", min: 0, max: 0.85, step: 0.01, defaultValue: 0.46, digits: 2 },
-    { key: "stroke", label: "Trazo", min: 0.45, max: 20, step: 0.05, defaultValue: 1.15, digits: 2 }
+    { key: "depthFade", label: "Profundidad", min: 0, max: 0.85, step: 0.01, defaultValue: 0.46, digits: 2, group: "appearance" },
+    { key: "stroke", label: "Trazo", min: 0.45, max: 20, step: 0.05, defaultValue: 1.15, digits: 2, group: "appearance" },
+    { key: "gradientStrength", label: "Gradiente", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "appearance" },
+    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "appearance" },
+    { key: "textureMode", label: "Textura", min: 0, max: 2, step: 1, defaultValue: 0, digits: 0, group: "appearance", options: [
+      { value: 0, label: "Lisa" },
+      { value: 1, label: "Flujo" },
+      { value: 2, label: "Grano" }
+    ] },
+    { key: "textureScale", label: "Escala de textura", min: 1, max: 12, step: 1, defaultValue: 4, digits: 0, group: "appearance" },
+    { key: "textureStrength", label: "Intensidad de textura", min: 0, max: 1, step: 0.01, defaultValue: 0, digits: 2, group: "appearance" },
+    { key: "textureMotion", label: "Movimiento de textura", min: -4, max: 4, step: 1, defaultValue: 1, digits: 0, group: "appearance" }
   ],
   defaults: {
     currents: 15,
@@ -185,7 +284,13 @@ export const mobiusFlowProject = {
     precession: 4,
     perspective: 0.48,
     depthFade: 0.46,
-    stroke: 1.15
+    stroke: 1.15,
+    gradientStrength: 0.7,
+    gradientAngle: -35,
+    textureMode: 0,
+    textureScale: 4,
+    textureStrength: 0,
+    textureMotion: 1
   },
   render,
   toSvg

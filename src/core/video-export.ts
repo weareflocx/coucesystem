@@ -94,6 +94,7 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
         time: frameIndex / frameCount,
         seed: state.seed,
         palette: state.palette,
+        view: state.view,
         parameters: state.parameters,
         transparent: true
       };

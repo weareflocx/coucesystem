@@ -39,7 +39,16 @@
               <span class="label-row"><span>Trazo</span><output id="foreground-color-value">#F4F3EE</output></span>
               <input id="foreground-color" type="color" value="#f4f3ee">
             </label>
+            <label class="control-label" for="accent-color">
+              <span class="label-row"><span>Acento</span><output id="accent-color-value">#AEB7FF</output></span>
+              <input id="accent-color" type="color" value="#aeb7ff">
+            </label>
           </fieldset>
+        </section>
+
+        <section class="sidebar-section" id="appearance-section" aria-labelledby="appearance-section-title" hidden>
+          <h2 class="section-label" id="appearance-section-title">Apariencia</h2>
+          <div class="control-stack" id="appearance-controls"></div>
         </section>
 
         <section class="sidebar-section" aria-labelledby="playback-section-title">
@@ -94,9 +103,23 @@
             <button class="button button-primary toolbar-button" id="open-export-dialog-button" type="button">Exportar</button>
           </div>
         </header>
-        <div class="canvas-stage" id="canvas-stage">
+        <div class="canvas-stage" id="canvas-stage" role="group" tabindex="-1">
           <canvas class="canvas-surface is-active" id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
           <canvas class="canvas-surface" id="cauce-three-canvas" aria-label="Vista previa 3D animada del proyecto Cauce" aria-hidden="true"></canvas>
+          <section class="viewport-hud" id="viewport-hud" aria-label="Controles de vista" aria-describedby="viewport-help" hidden>
+            <div class="viewport-readout">
+              <span>VIEW</span>
+              <output id="viewport-value">100% · 0° / 0°</output>
+            </div>
+            <div class="viewport-actions" role="group" aria-label="Modo y zoom del lienzo">
+              <button class="viewport-button" id="viewport-orbit-button" type="button" aria-pressed="true">Orbitar</button>
+              <button class="viewport-button" id="viewport-pan-button" type="button" aria-pressed="false">Mover</button>
+              <button class="viewport-button viewport-button-icon" id="viewport-zoom-out-button" type="button" aria-label="Alejar vista" title="Alejar vista">−</button>
+              <button class="viewport-button viewport-button-icon" id="viewport-zoom-in-button" type="button" aria-label="Acercar vista" title="Acercar vista">+</button>
+              <button class="viewport-button" id="viewport-reset-button" type="button">Reencuadrar</button>
+            </div>
+            <p id="viewport-help">Arrastra · Mayús/derecho mueve · Rueda aproxima</p>
+          </section>
           <p class="canvas-message" id="canvas-message">Iniciando motor gráfico…</p>
           <p class="canvas-error" id="canvas-error" role="alert" hidden></p>
         </div>
@@ -120,7 +143,7 @@
               <span class="export-index">01</span>
               <div>
                 <h3 id="save-current-title">Guardar actual</h3>
-                <p>Conserva fórmula, paleta, formato y posición temporal.</p>
+                <p>Conserva fórmula, apariencia, encuadre, formato y posición temporal.</p>
               </div>
             </div>
             <label class="control-label" for="save-name-input">
