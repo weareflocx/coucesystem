@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Cauce system — estudio de movimiento generativo.">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#080a0b">
+    <title>Cauce system</title>
+  </head>
+  <body>
+    <main class="app-shell" id="app">
+      <aside class="sidebar" aria-labelledby="app-title">
+        <header class="sidebar-header">
+          <h1 id="app-title">Cauce system</h1>
+        </header>
+
+        <section class="sidebar-section" aria-labelledby="parameters-section-title">
+          <div class="section-heading">
+            <h2 class="section-label" id="parameters-section-title">Campo</h2>
+            <button class="button button-quiet button-compact" id="reset-formula-button" type="button" title="Restaurar los parámetros originales de la fórmula">Reiniciar</button>
+          </div>
+          <div class="control-stack" id="project-controls"></div>
+        </section>
+
+        <section class="sidebar-section" aria-labelledby="color-section-title">
+          <div class="section-heading">
+            <h2 class="section-label" id="color-section-title">Color</h2>
+            <button class="button button-quiet button-compact" id="invert-button" type="button">Invertir</button>
+          </div>
+          <fieldset class="color-grid">
+            <legend class="sr-only">Paleta del proyecto</legend>
+            <label class="control-label" for="background-color">
+              <span class="label-row"><span>Fondo</span><output id="background-color-value">#11110F</output></span>
+              <input id="background-color" type="color" value="#11110f">
+            </label>
+            <label class="control-label" for="foreground-color">
+              <span class="label-row"><span>Trazo</span><output id="foreground-color-value">#F4F3EE</output></span>
+              <input id="foreground-color" type="color" value="#f4f3ee">
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="sidebar-section" aria-labelledby="playback-section-title">
+          <div class="section-heading">
+            <h2 class="section-label" id="playback-section-title">Tiempo</h2>
+            <button class="button button-compact" id="play-button" type="button" aria-pressed="true">Pausar</button>
+          </div>
+          <div class="control-stack">
+            <label class="control-label" for="speed-input">
+              <span class="label-row"><span>Velocidad</span><output id="speed-value">1.00×</output></span>
+              <input id="speed-input" type="range" min="0.25" max="2" step="0.05" value="1">
+            </label>
+            <label class="control-label" for="duration-input">
+              <span class="label-row"><span>Duración del bucle</span><output id="duration-value">8.0 s</output></span>
+              <input id="duration-input" type="range" min="2" max="20" step="0.5" value="8">
+            </label>
+            <label class="control-label" for="timeline-input">
+              <span class="label-row"><span>Posición</span><output id="timeline-value">0%</output></span>
+              <input id="timeline-input" type="range" min="0" max="1" step="0.001" value="0">
+            </label>
+          </div>
+        </section>
+
+        <footer class="sidebar-status">
+          <span class="status-indicator" aria-hidden="true"></span>
+          <p class="status" id="app-status" role="status" aria-live="polite">Preparando el lienzo…</p>
+        </footer>
+      </aside>
+
+      <section class="canvas-panel" aria-labelledby="canvas-title">
+        <header class="canvas-toolbar">
+          <h2 class="sr-only" id="canvas-title">Lienzo</h2>
+          <div class="project-toolbar" aria-label="Configuración del proyecto">
+            <label class="toolbar-field toolbar-field-project" for="project-select">
+              <span>Proyecto</span>
+              <select id="project-select"></select>
+            </label>
+            <label class="toolbar-field toolbar-field-format" for="format-select">
+              <span>Formato</span>
+              <select id="format-select"></select>
+            </label>
+            <label class="toolbar-field toolbar-field-seed" for="seed-input">
+              <span>Semilla</span>
+              <input id="seed-input" inputmode="numeric" min="0" max="4294967295" step="1" type="number" value="6437">
+            </label>
+            <button class="button button-quiet toolbar-button" id="new-seed-button" type="button">Nueva semilla</button>
+          </div>
+          <div class="toolbar-status">
+            <span class="canvas-meta" id="canvas-meta">—</span>
+            <span class="engine-state" id="engine-state">CONNECTING</span>
+            <button class="button button-quiet toolbar-button" id="open-saved-dialog-button" type="button">Guardados</button>
+            <button class="button button-primary toolbar-button" id="open-export-dialog-button" type="button">Exportar</button>
+          </div>
+        </header>
+        <div class="canvas-stage" id="canvas-stage">
+          <canvas id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
+          <p class="canvas-message" id="canvas-message">Iniciando motor gráfico…</p>
+          <p class="canvas-error" id="canvas-error" role="alert" hidden></p>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="saved-dialog" id="saved-dialog" aria-labelledby="saved-dialog-title" aria-describedby="saved-dialog-description">
+      <div class="saved-dialog-frame">
+        <header class="dialog-header">
+          <div>
+            <p class="dialog-code">Cauce / Library</p>
+            <h2 id="saved-dialog-title">Proyectos guardados</h2>
+            <p id="saved-dialog-description">Guarda el estado actual o recupera una configuración anterior.</p>
+          </div>
+          <button class="button button-quiet button-compact" id="close-saved-dialog-button" type="button">Cerrar</button>
+        </header>
+
+        <div class="saved-dialog-content">
+          <section class="saved-dialog-section" aria-labelledby="save-current-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">01</span>
+              <div>
+                <h3 id="save-current-title">Guardar actual</h3>
+                <p>Conserva fórmula, paleta, formato y posición temporal.</p>
+              </div>
+            </div>
+            <label class="control-label" for="save-name-input">
+              <span>Nombre</span>
+              <input id="save-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Liquidez nocturna">
+            </label>
+            <button class="button" id="save-project-button" type="button">Guardar proyecto</button>
+          </section>
+
+          <section class="saved-dialog-section" aria-labelledby="saved-library-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">02</span>
+              <div>
+                <h3 id="saved-library-title">Biblioteca local</h3>
+                <p>Configuraciones almacenadas únicamente en este navegador.</p>
+              </div>
+            </div>
+            <label class="control-label" for="saved-project-select">
+              <span>Proyectos guardados</span>
+              <select id="saved-project-select">
+                <option value="">Sin guardados</option>
+              </select>
+            </label>
+            <div class="saved-actions" role="group" aria-label="Acciones de proyectos guardados">
+              <button class="button" id="load-project-button" type="button">Cargar</button>
+              <button class="button button-danger" id="delete-project-button" type="button">Eliminar</button>
+            </div>
+          </section>
+
+          <section class="saved-dialog-section" aria-labelledby="import-preset-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">03</span>
+              <div>
+                <h3 id="import-preset-title">Importar preset</h3>
+                <p>Añade a la biblioteca un archivo compartible de Cauce.</p>
+              </div>
+            </div>
+            <button class="button button-quiet" id="import-preset-button" type="button">Importar preset .cauce</button>
+            <input id="import-preset-input" type="file" accept=".json,.cauce.json,application/json" hidden>
+          </section>
+
+          <p class="inline-error saved-dialog-message" id="storage-error" role="alert" hidden></p>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title" aria-describedby="export-dialog-description">
+      <div class="export-dialog-frame">
+        <header class="dialog-header">
+          <div>
+            <p class="dialog-code">Cauce / Output</p>
+            <h2 id="export-dialog-title">Exportar proyecto</h2>
+            <p id="export-dialog-description">Genera el estado actual en el formato que necesites.</p>
+          </div>
+          <button class="button button-quiet button-compact" id="close-export-dialog-button" type="button">Cerrar</button>
+        </header>
+
+        <div class="export-grid">
+          <section class="export-option" aria-labelledby="svg-export-title">
+            <div class="export-option-heading">
+              <span class="export-index">01</span>
+              <div>
+                <h3 id="svg-export-title">SVG</h3>
+                <p>Fotograma vectorial editable del instante actual.</p>
+              </div>
+            </div>
+            <button class="button" id="export-button" type="button">Descargar SVG</button>
+            <p class="export-note" id="svg-export-status" role="status" aria-live="polite">Exporta el formato y la posición actuales.</p>
+          </section>
+
+          <section class="export-option" aria-labelledby="video-section-title">
+            <div class="export-option-heading">
+              <span class="export-index">02</span>
+              <div>
+                <h3 id="video-section-title">Vídeo alpha</h3>
+                <p>WebM VP9 transparente con la duración actual.</p>
+              </div>
+            </div>
+            <label class="control-label" for="video-fps-select">
+              <span>Fotogramas por segundo</span>
+              <select id="video-fps-select">
+                <option value="20">20 fps</option>
+                <option value="24">24 fps</option>
+                <option value="30" selected>30 fps</option>
+                <option value="60">60 fps</option>
+              </select>
+            </label>
+            <div class="video-actions" role="group" aria-label="Exportación de vídeo transparente">
+              <button class="button" id="export-alpha-video-button" type="button">Descargar WebM alpha</button>
+              <button class="button button-quiet" id="cancel-alpha-video-button" type="button" disabled>Cancelar</button>
+            </div>
+            <progress id="video-export-progress" max="1" value="0" hidden>0%</progress>
+            <p class="export-note" id="video-export-status" role="status" aria-live="polite">El navegador verificará soporte VP9 alpha antes de exportar.</p>
+          </section>
+
+          <section class="export-option" aria-labelledby="web-section-title">
+            <div class="export-option-heading">
+              <span class="export-index">03</span>
+              <div>
+                <h3 id="web-section-title">Web embed</h3>
+                <p>Web Component, JSON, ejemplo HTML y documentación.</p>
+              </div>
+            </div>
+            <label class="control-label" for="web-background-select">
+              <span>Superficie</span>
+              <select id="web-background-select">
+                <option value="transparent" selected>Transparente</option>
+                <option value="color">Incluir color de fondo</option>
+              </select>
+            </label>
+            <button class="button" id="export-web-button" type="button">Descargar paquete web</button>
+            <p class="inline-error" id="web-export-error" role="alert" hidden></p>
+            <p class="export-note" id="web-export-status" role="status" aria-live="polite">ZIP autónomo y sin dependencias.</p>
+          </section>
+
+          <section class="export-option" aria-labelledby="preset-export-title">
+            <div class="export-option-heading">
+              <span class="export-index">04</span>
+              <div>
+                <h3 id="preset-export-title">Preset compartible</h3>
+                <p>Estado completo para abrirlo en otra instalación de Cauce.</p>
+              </div>
+            </div>
+            <label class="control-label" for="preset-export-name">
+              <span>Nombre</span>
+              <input id="preset-export-name" type="text" maxlength="80" autocomplete="off">
+            </label>
+            <button class="button" id="export-preset-button" type="button">Descargar .cauce.json</button>
+            <p class="inline-error" id="preset-export-error" role="alert" hidden></p>
+            <p class="export-note" id="preset-export-status" role="status" aria-live="polite">Incluye proyecto, formato, paleta, tiempo y parámetros.</p>
+          </section>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="alert-dialog" id="delete-project-dialog" aria-labelledby="delete-project-title" aria-describedby="delete-project-description">
+      <form method="dialog">
+        <p class="dialog-code">Cauce / Acción destructiva</p>
+        <h2 id="delete-project-title">Eliminar guardado</h2>
+        <p id="delete-project-description">Esta acción elimina la configuración seleccionada de este navegador y no se puede deshacer.</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel">Cancelar</button>
+          <button class="button button-danger" id="confirm-delete-project-button" value="confirm">Eliminar</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

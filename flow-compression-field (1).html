@@ -1,0 +1,333 @@
+<div id="flow-compression-field">
+  <div class="viz-grid" aria-label="Parámetros del campo">
+    <label class="form-label" for="fc-lines">
+      Líneas <output id="fc-lines-value">118</output>
+      <input class="form-control" id="fc-lines" type="range" min="40" max="180" step="1" value="118">
+    </label>
+    <label class="form-label" for="fc-focus">
+      Focos <output id="fc-focus-value">11</output>
+      <input class="form-control" id="fc-focus" type="range" min="3" max="20" step="1" value="11">
+    </label>
+    <label class="form-label" for="fc-compression">
+      Compresión <output id="fc-compression-value">1.35</output>
+      <input class="form-control" id="fc-compression" type="range" min="0" max="2.6" step="0.05" value="1.35">
+    </label>
+    <label class="form-label" for="fc-flow">
+      Flujo <output id="fc-flow-value">0.75</output>
+      <input class="form-control" id="fc-flow" type="range" min="0" max="1.6" step="0.05" value="0.75">
+    </label>
+    <label class="form-label" for="fc-scale">
+      Escala vertical <output id="fc-scale-value">1.00</output>
+      <input class="form-control" id="fc-scale" type="range" min="0.45" max="2" step="0.05" value="1">
+    </label>
+    <label class="form-label" for="fc-stroke">
+      Trazo <output id="fc-stroke-value">1.55</output>
+      <input class="form-control" id="fc-stroke" type="range" min="0.45" max="3.2" step="0.05" value="1.55">
+    </label>
+  </div>
+
+  <div class="viz-controls" aria-label="Acciones del generador">
+    <label class="form-label" for="fc-preset">
+      Preset
+      <select class="form-control" id="fc-preset">
+        <option value="reference">Referencia</option>
+        <option value="calm">Calma</option>
+        <option value="caustic">Cáustica</option>
+        <option value="organic">Orgánica</option>
+        <option value="custom" disabled>Personalizado</option>
+      </select>
+    </label>
+    <button class="btn" id="fc-new" type="button">Nuevo campo</button>
+    <button class="btn btn-ghost" id="fc-invert" type="button" aria-pressed="false">Invertir</button>
+    <button class="btn btn-primary" id="fc-export" type="button">Exportar SVG</button>
+  </div>
+
+  <div class="fc-stage">
+    <svg id="fc-svg" class="fc-svg" viewBox="0 0 760 1160" role="img" aria-label="Campo generativo de líneas verticales comprimidas y onduladas" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+</div>
+
+<style>
+  #flow-compression-field .fc-stage {
+    display: grid;
+    place-items: center;
+    margin-top: 1rem;
+  }
+
+  #flow-compression-field .fc-svg {
+    display: block;
+    width: min(100%, 520px);
+    height: auto;
+    aspect-ratio: 19 / 29;
+    background: var(--foreground);
+  }
+
+  #flow-compression-field output {
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+(() => {
+  "use strict";
+
+  const root = document.getElementById("flow-compression-field");
+  if (!root) return;
+
+  const svg = root.querySelector("#fc-svg");
+  const controls = {
+    lines: root.querySelector("#fc-lines"),
+    focus: root.querySelector("#fc-focus"),
+    compression: root.querySelector("#fc-compression"),
+    flow: root.querySelector("#fc-flow"),
+    scale: root.querySelector("#fc-scale"),
+    stroke: root.querySelector("#fc-stroke")
+  };
+
+  const outputs = {
+    lines: root.querySelector("#fc-lines-value"),
+    focus: root.querySelector("#fc-focus-value"),
+    compression: root.querySelector("#fc-compression-value"),
+    flow: root.querySelector("#fc-flow-value"),
+    scale: root.querySelector("#fc-scale-value"),
+    stroke: root.querySelector("#fc-stroke-value")
+  };
+
+  const preset = root.querySelector("#fc-preset");
+  const newButton = root.querySelector("#fc-new");
+  const invertButton = root.querySelector("#fc-invert");
+  const exportButton = root.querySelector("#fc-export");
+
+  const presets = {
+    reference: { lines: 118, focus: 11, compression: 1.35, flow: 0.75, scale: 1, stroke: 1.55, seed: 6437 },
+    calm: { lines: 82, focus: 7, compression: 0.7, flow: 0.45, scale: 0.8, stroke: 1.35, seed: 2281 },
+    caustic: { lines: 150, focus: 16, compression: 2.1, flow: 0.8, scale: 0.9, stroke: 1.2, seed: 9173 },
+    organic: { lines: 108, focus: 13, compression: 1.25, flow: 1.2, scale: 1.45, stroke: 1.5, seed: 4805 }
+  };
+
+  let seed = presets.reference.seed;
+  let inverted = false;
+  let renderFrame = 0;
+  let lastPaths = [];
+
+  function mulberry32(value) {
+    let state = value >>> 0;
+    return function random() {
+      state += 0x6D2B79F5;
+      let result = state;
+      result = Math.imul(result ^ (result >>> 15), result | 1);
+      result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
+      return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, value));
+  }
+
+  function getValues() {
+    return {
+      lines: Number(controls.lines.value),
+      focus: Number(controls.focus.value),
+      compression: Number(controls.compression.value),
+      flow: Number(controls.flow.value),
+      scale: Number(controls.scale.value),
+      stroke: Number(controls.stroke.value)
+    };
+  }
+
+  function updateOutputs() {
+    const values = getValues();
+    outputs.lines.value = String(values.lines);
+    outputs.focus.value = String(values.focus);
+    outputs.compression.value = values.compression.toFixed(2);
+    outputs.flow.value = values.flow.toFixed(2);
+    outputs.scale.value = values.scale.toFixed(2);
+    outputs.stroke.value = values.stroke.toFixed(2);
+  }
+
+  function makeField(values) {
+    const random = mulberry32(seed);
+    const phases = Array.from({ length: 8 }, () => random() * Math.PI * 2);
+    const events = [];
+
+    for (let index = 0; index < values.focus; index += 1) {
+      const compressive = random() < 0.72;
+      events.push({
+        u: 0.04 + random() * 0.92,
+        v: 0.03 + random() * 0.94,
+        sx: 0.018 + random() * 0.09,
+        sy: 0.06 + random() * 0.24,
+        strength: (compressive ? -1 : 1) * (0.55 + random() * 1.25),
+        drift: (random() - 0.5) * 0.22,
+        tilt: (random() - 0.5) * 0.34,
+        frequency: 0.35 + random() * 1.25,
+        phase: random() * Math.PI * 2
+      });
+    }
+
+    return { phases, events };
+  }
+
+  function logGap(u, v, values, field) {
+    const scaledV = v * values.scale;
+    let result = values.flow * (
+      0.46 * Math.sin(Math.PI * 2 * (0.82 * u + 0.34 * scaledV) + field.phases[0]) +
+      0.31 * Math.sin(Math.PI * 2 * (1.63 * u - 0.52 * scaledV) + field.phases[1]) +
+      0.16 * Math.sin(Math.PI * 2 * (3.28 * u + 0.73 * scaledV) + field.phases[2])
+    );
+
+    for (const event of field.events) {
+      const dv = v - event.v;
+      const localWave = event.drift * Math.sin(event.phase + Math.PI * 2 * event.frequency * scaledV);
+      const center = event.u + event.tilt * dv + localWave;
+      const du = u - center;
+      const exponent = -0.5 * (
+        (du * du) / (event.sx * event.sx) +
+        (dv * dv) / (event.sy * event.sy)
+      );
+      result += values.compression * event.strength * Math.exp(exponent);
+    }
+
+    const longFold = Math.sin(Math.PI * 2 * (0.37 * scaledV) + field.phases[3]);
+    result += values.flow * 0.14 * Math.sin(Math.PI * 2 * (u * 1.15 + longFold * 0.18) + field.phases[4]);
+    return clamp(result, -4.4, 4.4);
+  }
+
+  function createPaths(values) {
+    const width = 760;
+    const height = 1160;
+    const padding = 4;
+    const span = width - padding * 2;
+    const samples = 232;
+    const intervals = values.lines - 1;
+    const points = Array.from({ length: values.lines }, () => []);
+    const field = makeField(values);
+
+    for (let sample = 0; sample < samples; sample += 1) {
+      const v = sample / (samples - 1);
+      const y = v * height;
+      const gaps = new Array(intervals);
+      let total = 0;
+
+      for (let index = 0; index < intervals; index += 1) {
+        const u = (index + 0.5) / intervals;
+        const gap = Math.exp(logGap(u, v, values, field));
+        gaps[index] = gap;
+        total += gap;
+      }
+
+      let cumulative = 0;
+      points[0].push([padding, y]);
+      for (let line = 1; line < values.lines; line += 1) {
+        cumulative += gaps[line - 1];
+        points[line].push([padding + span * cumulative / total, y]);
+      }
+    }
+
+    return points.map(line => {
+      let path = "M" + line[0][0].toFixed(2) + " " + line[0][1].toFixed(2);
+      for (let index = 1; index < line.length; index += 1) {
+        path += "L" + line[index][0].toFixed(2) + " " + line[index][1].toFixed(2);
+      }
+      return path;
+    });
+  }
+
+  function render() {
+    renderFrame = 0;
+    updateOutputs();
+    const values = getValues();
+    lastPaths = createPaths(values);
+
+    const background = inverted ? "var(--background)" : "var(--foreground)";
+    const foreground = inverted ? "var(--foreground)" : "var(--background)";
+    const namespace = "http://www.w3.org/2000/svg";
+    const fragment = document.createDocumentFragment();
+    const rectangle = document.createElementNS(namespace, "rect");
+    rectangle.setAttribute("width", "760");
+    rectangle.setAttribute("height", "1160");
+    rectangle.setAttribute("fill", background);
+    fragment.appendChild(rectangle);
+
+    const group = document.createElementNS(namespace, "g");
+    group.setAttribute("fill", "none");
+    group.setAttribute("stroke", foreground);
+    group.setAttribute("stroke-width", String(values.stroke));
+    group.setAttribute("stroke-linecap", "round");
+    group.setAttribute("stroke-linejoin", "round");
+
+    for (const pathData of lastPaths) {
+      const path = document.createElementNS(namespace, "path");
+      path.setAttribute("d", pathData);
+      group.appendChild(path);
+    }
+
+    fragment.appendChild(group);
+    svg.replaceChildren(fragment);
+  }
+
+  function requestRender() {
+    if (renderFrame) cancelAnimationFrame(renderFrame);
+    renderFrame = requestAnimationFrame(render);
+  }
+
+  function applyPreset(name) {
+    const values = presets[name];
+    if (!values) return;
+    controls.lines.value = String(values.lines);
+    controls.focus.value = String(values.focus);
+    controls.compression.value = String(values.compression);
+    controls.flow.value = String(values.flow);
+    controls.scale.value = String(values.scale);
+    controls.stroke.value = String(values.stroke);
+    seed = values.seed;
+    requestRender();
+  }
+
+  function exportSvg() {
+    const values = getValues();
+    const background = inverted ? "#f7f7f2" : "#050505";
+    const foreground = inverted ? "#050505" : "#f7f7f2";
+    const paths = lastPaths.map(pathData => "<path d=\"" + pathData + "\"/>").join("");
+    const source = [
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"760\" height=\"1160\" viewBox=\"0 0 760 1160\">",
+      "<rect width=\"760\" height=\"1160\" fill=\"" + background + "\"/>",
+      "<g fill=\"none\" stroke=\"" + foreground + "\" stroke-width=\"" + values.stroke + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\">",
+      paths,
+      "</g></svg>"
+    ].join("");
+    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "flow-compression-" + seed + ".svg";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  Object.values(controls).forEach(control => {
+    control.addEventListener("input", () => {
+      preset.value = "custom";
+      requestRender();
+    });
+  });
+
+  preset.addEventListener("change", () => applyPreset(preset.value));
+  newButton.addEventListener("click", () => {
+    seed = Math.floor(Math.random() * 1000000000);
+    preset.value = "custom";
+    requestRender();
+  });
+  invertButton.addEventListener("click", () => {
+    inverted = !inverted;
+    invertButton.setAttribute("aria-pressed", String(inverted));
+    render();
+  });
+  exportButton.addEventListener("click", exportSvg);
+
+  render();
+})();
+</script>
