@@ -42,16 +42,16 @@ export async function exportAlphaWebM(options: AlphaVideoExportOptions): Promise
   const frameDuration = 1 / fps;
   const frameCount = Math.max(1, Math.round(state.playback.loopSeconds * fps));
   const canvas = new OffscreenCanvas(format.width, format.height);
-  const context = project.backend === "three"
+  const projectRenderer = project.createRenderer
+    ? await project.createRenderer(canvas)
+    : null;
+  const context = projectRenderer
     ? null
     : canvas.getContext("2d", { alpha: true });
-  const projectRenderer = project.backend === "three"
-    ? await project.createRenderer?.(canvas) ?? null
-    : null;
-  if (project.backend === "three" && !projectRenderer) {
-    throw new Error("El proyecto 3D no incluye un renderer exportable.");
+  if (project.createRenderer && !projectRenderer) {
+    throw new Error("El proyecto no incluye un renderer exportable.");
   }
-  if (project.backend !== "three" && (!context || !project.render)) {
+  if (!projectRenderer && (!context || !project.render)) {
     throw new Error("No se pudo crear el lienzo transparente de exportación.");
   }
   projectRenderer?.resize({

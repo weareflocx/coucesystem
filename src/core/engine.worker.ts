@@ -63,8 +63,9 @@ function disposeProjectRenderer(): void {
 }
 
 function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | null {
-  if (!threeCanvas || !project.createRenderer) {
-    throw new Error(`El proyecto ${project.id} no incluye un renderer Three.js.`);
+  const rendererCanvas = project.backend === "three" ? threeCanvas : canvas;
+  if (!rendererCanvas || !project.createRenderer) {
+    throw new Error(`El proyecto ${project.id} no incluye un renderer administrado.`);
   }
   if (projectRenderer && rendererProjectId === project.id) return projectRenderer;
   if (projectRendererPromise && rendererProjectId === project.id) return null;
@@ -73,7 +74,7 @@ function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | nu
   }
   rendererProjectId = project.id;
   const loadToken = rendererLoadToken;
-  projectRendererPromise = Promise.resolve(project.createRenderer(threeCanvas))
+  projectRendererPromise = Promise.resolve(project.createRenderer(rendererCanvas))
     .then((renderer) => {
       if (loadToken !== rendererLoadToken || rendererProjectId !== project.id) {
         renderer.dispose();
@@ -120,7 +121,7 @@ function draw(): void {
   const offsetX = (canvasWidth - format.width * scale) / 2;
   const offsetY = (canvasHeight - format.height * scale) / 2;
 
-  if (project.backend === "three") {
+  if (project.createRenderer) {
     const renderer = ensureProjectRenderer(project);
     if (!renderer) return;
     const cssMargin = Math.min(40, cssWidth * 0.055, cssHeight * 0.055);

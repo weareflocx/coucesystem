@@ -18,6 +18,7 @@ Los campos opcionales `preferredFormatKey` y `preferredLoopSeconds` permiten sel
 Cada proyecto elige uno de estos contratos:
 
 - Canvas 2D — `backend` omitido o `"canvas2d"` y `render(context, frame)`.
+- Two.js — `backend: "two"` y `createRenderer(canvas)`.
 - Three.js — `backend: "three"` y `createRenderer(canvas)`.
 
 `createRenderer` puede ser asíncrono y devuelve un objeto con este ciclo de vida:
@@ -26,7 +27,7 @@ Cada proyecto elige uno de estos contratos:
 - `render(frame)`: dibuja exactamente el tiempo recibido, sin reloj propio.
 - `dispose()`: libera geometrías, materiales y contexto del renderer.
 
-Studio conserva un canvas por backend y destruye el renderer 3D al volver a un proyecto 2D. Vídeo y Web Component crean instancias independientes mediante el mismo contrato. `toSvg` sigue siendo obligatorio también para proyectos 3D y actúa como representación vectorial compatible.
+Studio conserva canvases separados para la superficie 2D y la superficie WebGL, y destruye cualquier renderer administrado al cambiar de proyecto. Vídeo y Web Component crean instancias independientes mediante el mismo contrato. `toSvg` sigue siendo obligatorio para todos los backends y actúa como representación vectorial compatible.
 
 `viewControls: true` activa el HUD compartido. El proyecto debe entonces aplicar `frame.view`:
 
@@ -55,6 +56,7 @@ El exportador web empaqueta automáticamente todos los módulos JavaScript de `s
 - No iniciar `requestAnimationFrame`, `setAnimationLoop` ni un reloj de Three.js dentro del proyecto.
 - El fondo sólo se dibuja cuando `frame.transparent` es falso.
 - Canvas 2D debe restaurar `globalAlpha` y cualquier estado mutable que modifique.
+- Two.js debe usar render manual, sin `play()` ni `autostart`, y liberar la escena en `dispose()`.
 - Three.js debe derivar animación, cámara y deformación únicamente de `frame.time` y liberar todos sus recursos en `dispose()`.
 
 ## Rendimiento
@@ -67,4 +69,4 @@ La geometría debe escalar con el formato sin asignaciones ilimitadas. Los pará
 npm run build
 ```
 
-Además, verificar SVG en varios puntos del bucle y comparar de forma exacta los resultados de `time = 0` y `time = 1`. Para Three.js se debe probar también el cambio 2D → 3D → 2D, la exportación WebM alpha y el ZIP servido por HTTP.
+Además, verificar SVG en varios puntos del bucle y comparar de forma exacta los resultados de `time = 0` y `time = 1`. Para renderers administrados se debe probar también el cambio de backend, la exportación WebM alpha y el ZIP servido por HTTP.

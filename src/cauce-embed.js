@@ -10,7 +10,7 @@ export const CAUCE_RENDERERS = Object.fromEntries(
 export function renderCauceProject(projectId, context, frame) {
   const project = CAUCE_RENDERERS[projectId];
   if (!project) throw new Error(`Proyecto Cauce desconocido: ${projectId}.`);
-  if (!project.render) throw new Error(`El proyecto ${projectId} requiere el backend Three.js.`);
+  if (!project.render) throw new Error(`El proyecto ${projectId} requiere un renderer administrado.`);
   project.render(context, frame);
 }
 
@@ -292,8 +292,7 @@ if (
       this._canvas.replaceWith(nextCanvas);
       this._canvas = nextCanvas;
 
-      if (project.backend === "three") {
-        if (!project.createRenderer) throw new Error(`El proyecto ${project.id} no incluye renderer Three.js.`);
+      if (project.createRenderer) {
         const renderer = await project.createRenderer(this._canvas);
         if (token !== this._applyToken) {
           renderer.dispose();

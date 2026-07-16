@@ -69,7 +69,7 @@ function sampleSurface(project, u, v, halfTwists, phase) {
   );
 }
 
-function createGeometry(frame) {
+export function createMobiusGeometry(frame) {
   const visibleCurrentCount = clamp(oddInteger(parameter(frame, "currents", 15), 15), 3, 35);
   const sideCurrentCount = (visibleCurrentCount - 1) / 2;
   const halfTwists = oddInteger(parameter(frame, "halfTwists", 1), 1);
@@ -112,12 +112,12 @@ function createGeometry(frame) {
   };
 }
 
-function opacityForBin(bin, depthFade) {
+export function mobiusOpacityForBin(bin, depthFade) {
   const depth = bin / (DEPTH_BINS - 1);
   return 1 - depthFade * (1 - depth) * 0.82;
 }
 
-function gradientGeometry(frame, appearance) {
+export function mobiusGradientGeometry(frame, appearance) {
   const centerX = frame.width * 0.5;
   const centerY = frame.height * 0.5;
   const radius = Math.hypot(frame.width, frame.height) * 0.5;
@@ -132,7 +132,7 @@ function gradientGeometry(frame, appearance) {
 }
 
 function createStrokeGradient(context, frame, appearance) {
-  const vector = gradientGeometry(frame, appearance);
+  const vector = mobiusGradientGeometry(frame, appearance);
   const gradient = context.createLinearGradient(vector.x1, vector.y1, vector.x2, vector.y2);
   const accent = mixHexColors(
     frame.palette.foreground,
@@ -145,7 +145,7 @@ function createStrokeGradient(context, frame, appearance) {
   return gradient;
 }
 
-function textureStroke(frame, appearance, strokeWidth) {
+export function mobiusTextureStroke(frame, appearance, strokeWidth) {
   if (appearance.textureMode === 0 || appearance.textureStrength <= 0.001) {
     return { pattern: [], offset: 0 };
   }
@@ -166,7 +166,7 @@ function strokeGeometry(context, geometry, baseOpacity) {
   for (let bin = 0; bin < geometry.bins.length; bin += 1) {
     const segments = geometry.bins[bin];
     if (segments.length === 0) continue;
-    context.globalAlpha = opacityForBin(bin, geometry.depthFade) * baseOpacity;
+    context.globalAlpha = mobiusOpacityForBin(bin, geometry.depthFade) * baseOpacity;
     context.beginPath();
     for (let index = 0; index < segments.length; index += 4) {
       context.moveTo(segments[index], segments[index + 1]);
@@ -177,7 +177,7 @@ function strokeGeometry(context, geometry, baseOpacity) {
 }
 
 function render(context, frame) {
-  const geometry = createGeometry(frame);
+  const geometry = createMobiusGeometry(frame);
   const appearance = appearanceParameters(frame);
   if (!frame.transparent) {
     context.fillStyle = frame.palette.background;
@@ -189,7 +189,7 @@ function render(context, frame) {
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const texture = textureStroke(frame, appearance, geometry.strokeWidth);
+  const texture = mobiusTextureStroke(frame, appearance, geometry.strokeWidth);
   if (texture.pattern.length > 0) {
     context.setLineDash([]);
     strokeGeometry(context, geometry, 1 - appearance.textureStrength * 0.82);
@@ -213,18 +213,18 @@ function segmentsToPath(segments) {
 }
 
 function toSvg(frame) {
-  const geometry = createGeometry(frame);
+  const geometry = createMobiusGeometry(frame);
   const appearance = appearanceParameters(frame);
-  const vector = gradientGeometry(frame, appearance);
+  const vector = mobiusGradientGeometry(frame, appearance);
   const accent = mixHexColors(
     frame.palette.foreground,
     paletteAccent(frame),
     appearance.gradientStrength
   );
-  const texture = textureStroke(frame, appearance, geometry.strokeWidth);
+  const texture = mobiusTextureStroke(frame, appearance, geometry.strokeWidth);
   const paths = geometry.bins.map((segments, bin) => {
     if (segments.length === 0) return "";
-    return `<path d="${segmentsToPath(segments)}" stroke-opacity="${opacityForBin(bin, geometry.depthFade).toFixed(3)}"/>`;
+    return `<path d="${segmentsToPath(segments)}" stroke-opacity="${mobiusOpacityForBin(bin, geometry.depthFade).toFixed(3)}"/>`;
   });
   const texturePaths = texture.pattern.length > 0
     ? `<g opacity="${appearance.textureStrength.toFixed(3)}" stroke-dasharray="${texture.pattern.map((value) => value.toFixed(3)).join(" ")}" stroke-dashoffset="${texture.offset.toFixed(3)}">${paths.join("")}</g>`

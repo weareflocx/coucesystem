@@ -95,16 +95,27 @@ function createExampleHtml(config: EmbedConfigV1, configFilename: string): strin
 </html>`;
 }
 
-function createReadme(configFilename: string, snippet: string, usesThree: boolean): string {
-  const vendorEntry = usesThree
-    ? "- vendor/three.module.js y vendor/three.core.min.js: backend 3D local incluido en el paquete.\n"
-    : "";
+function createReadme(
+  configFilename: string,
+  snippet: string,
+  usesThree: boolean,
+  usesTwo: boolean
+): string {
+  const vendorEntries = [
+    usesThree
+      ? "- vendor/three.module.js y vendor/three.core.min.js: backend 3D local incluido en el paquete."
+      : "",
+    usesTwo
+      ? "- vendor/two.module.js: backend vectorial Two.js incluido localmente."
+      : ""
+  ].filter(Boolean).join("\n");
+  const vendorSection = vendorEntries ? `${vendorEntries}\n` : "";
   return `# Cauce web embed
 
 ## Archivos
 
 - cauce-embed.js: Web Component autónomo.
-${vendorEntry}- projects/: renderers deterministas incluidos en el paquete.
+${vendorSection}- projects/: renderers deterministas incluidos en el paquete.
 - ${configFilename}: configuración editable de la pieza.
 - index.html: integración mínima funcional.
 
@@ -138,6 +149,12 @@ function createProjectModuleEntries(): { name: string; contents: string }[] {
       ).replace(
         /import\(["']three["']\)/g,
         'import("../vendor/three.module.js")'
+      ).replace(
+        /from\s+["']two\.js["']/g,
+        'from "../vendor/two.module.js"'
+      ).replace(
+        /import\(["']two\.js["']\)/g,
+        'import("../vendor/two.module.js")'
       )
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -155,7 +172,8 @@ export async function createWebPackage(
   const snippet = createSnippet(configFilename, format.width, format.height);
   const configSource = `${JSON.stringify(config, null, 2)}\n`;
   const usesThree = project.backend === "three";
-  const vendorEntries = usesThree
+  const usesTwo = project.backend === "two";
+  const threeVendorEntries = usesThree
     ? await Promise.all([
       import("../../node_modules/three/build/three.module.min.js?raw"),
       import("../../node_modules/three/build/three.core.min.js?raw")
@@ -164,13 +182,20 @@ export async function createWebPackage(
       { name: "vendor/three.core.min.js", contents: threeCore.default }
     ])
     : [];
+  const twoVendorEntries = usesTwo
+    ? await import("../../node_modules/two.js/build/two.module.js?raw")
+      .then((twoModule) => [
+        { name: "vendor/two.module.js", contents: twoModule.default }
+      ])
+    : [];
   const blob = createZip([
     { name: "cauce-embed.js", contents: embedModuleSource },
-    ...vendorEntries,
+    ...threeVendorEntries,
+    ...twoVendorEntries,
     ...createProjectModuleEntries(),
     { name: configFilename, contents: configSource },
     { name: "index.html", contents: createExampleHtml(config, configFilename) },
-    { name: "README.md", contents: createReadme(configFilename, snippet, usesThree) }
+    { name: "README.md", contents: createReadme(configFilename, snippet, usesThree, usesTwo) }
   ]);
 
   return {

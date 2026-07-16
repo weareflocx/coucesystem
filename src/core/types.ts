@@ -1,6 +1,6 @@
 export type CauceContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 export type CauceCanvas = HTMLCanvasElement | OffscreenCanvas;
-export type ProjectBackend = "canvas2d" | "three";
+export type ProjectBackend = "canvas2d" | "two" | "three";
 
 export interface ProjectRendererViewport {
   width: number;

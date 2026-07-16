@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "mediabunny": "^1.50.8",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "two.js": "^0.8.23"
   }
 }

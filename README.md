@@ -22,7 +22,7 @@ npm run build
 - `src/main.ts`: shell de autor, controles y comunicación con el worker.
 - `src/styles.css`: layout y sistema visual del estudio.
 
-La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D para los proyectos vectoriales existentes y Three.js/WebGL para las piezas con geometría 3D. Ambos motores reciben el mismo estado y reloj determinista; cada proyecto mantiene además una salida SVG.
+La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D directo, Two.js/Canvas para el prototipo vectorial retained-mode y Three.js/WebGL para las piezas con geometría 3D. Los tres backends reciben el mismo estado y reloj determinista; cada proyecto mantiene además una salida SVG.
 
 ## Estado actual
 
@@ -32,6 +32,7 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `04 · Orbital Basin`: órbitas cerradas sobre una cuenca planar con dos tangencias compartidas.
 - `05 · Möbius Flow`: corrientes cerradas sobre una banda de Möbius paramétrica, con una cara y un único borde.
 - `05.1 · Möbius Flow 1.1`: malla Three.js de doble cara con depth buffer, iluminación y corrientes 3D.
+- `05.2 · Möbius Flow Vector`: prototipo paralelo con scene graph Two.js sobre la misma geometría y parámetros de 05.
 - Apariencia Möbius compartida: color de acento, gradiente orientable y texturas procedurales `Lisa`, `Flujo` y `Grano`.
 - HUD de vista dentro del canvas: órbita, paneo, zoom, gestos táctiles, teclado y reencuadre; el estado se conserva en guardados y exportaciones.
 - `06 · Confluence Weave`: cauces orbitales convertidos en un campo de densidad cuyos contactos forman puentes y membranas vectoriales.
@@ -46,3 +47,4 @@ La exportación transparente verifica en tiempo de ejecución que el navegador p
 
 El contrato para añadir proyectos está documentado en [`docs/project-contract.md`](docs/project-contract.md).
 Las decisiones de apariencia y navegación están documentadas en [`docs/appearance-and-view.md`](docs/appearance-and-view.md).
+La arquitectura y las mediciones de 05.2 están documentadas en [`docs/two-prototype.md`](docs/two-prototype.md).
