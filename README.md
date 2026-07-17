@@ -11,6 +11,21 @@ npm run dev
 
 Abre siempre `http://localhost:5173`. Studio sincroniza una vez los guardados que pudieran existir en `http://127.0.0.1:5173` y redirige después al origen canónico `localhost`.
 
+`npm run dev` conserva además una copia de la biblioteca en `.cauce/library.json`. Este archivo es local y está excluido de Git.
+
+## Netlify
+
+El repositorio incluye `netlify.toml` y una Function en `/api/library`. El deploy continúa siendo local-first: sin configuración remota, proyectos y paletas viven en `localStorage` y pueden exportarse como backup.
+
+Para activar la sincronización privada entre dispositivos:
+
+1. Genera una clave larga, por ejemplo con `openssl rand -base64 32`.
+2. Crea `CAUCE_LIBRARY_KEY` en las variables de entorno de Netlify con alcance de Functions. No uses el prefijo `VITE_`.
+3. Despliega de nuevo el sitio.
+4. Abre **Proyectos → Sincronización Netlify**, introduce la misma clave y pulsa **Conectar**.
+
+La clave se conserva en `sessionStorage`, nunca en el repositorio ni en el bundle. La biblioteca se almacena en Netlify Blobs mediante un store global con consistencia fuerte. Consulta [`docs/library-sync.md`](docs/library-sync.md) para el contrato y las limitaciones.
+
 ## Verificación
 
 ```bash
@@ -39,6 +54,7 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `05.2 · Möbius Flow Vector`: prototipo paralelo con scene graph Two.js sobre la misma geometría y parámetros de 05.
 - Color compartido en los diez proyectos: cuatro roles editables (`Fondo`, `Trazo`, `Acento` y `Final`), gradiente perceptual OKLab orientable y exportación sólida real con intensidad cero.
 - Biblioteca de paletas persistente: conserva color y gradiente en el navegador y en el mismo archivo local `.cauce/library.json` que los proyectos guardados.
+- Sincronización opcional con Netlify Blobs: combina proyectos, paletas y eliminaciones entre dispositivos sin renunciar al funcionamiento offline.
 - Apariencia Möbius compartida: gradiente y texturas procedurales `Lisa`, `Flujo` y `Grano` entre Canvas2D, SVG, Two.js y Three.js.
 - Footer de tiempo y vista: timeline, órbita, paneo, zoom, gestos táctiles, teclado y reencuadre; el estado se conserva en guardados y exportaciones.
 - `06 · Confluence Weave`: cauces orbitales convertidos en un campo de densidad cuyos contactos forman puentes y membranas vectoriales.

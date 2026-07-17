@@ -26,6 +26,14 @@ interface LibraryFile {
   createdAt: string;
   records: LibraryRecord[];
   colors?: LibraryRecord[];
+  tombstones?: LibraryTombstone[];
+}
+
+interface LibraryTombstone {
+  schemaVersion: 1;
+  id: string;
+  kind: "project" | "color";
+  deletedAt: string;
 }
 
 function isLibraryRecord(record: unknown): record is LibraryRecord {
@@ -33,6 +41,17 @@ function isLibraryRecord(record: unknown): record is LibraryRecord {
     typeof record === "object" &&
     typeof (record as Partial<LibraryRecord>).id === "string" &&
     typeof (record as Partial<LibraryRecord>).updatedAt === "string";
+}
+
+function isLibraryTombstone(value: unknown): value is LibraryTombstone {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<LibraryTombstone>;
+  return candidate.schemaVersion === 1 &&
+    typeof candidate.id === "string" &&
+    candidate.id.length > 0 &&
+    (candidate.kind === "project" || candidate.kind === "color") &&
+    typeof candidate.deletedAt === "string" &&
+    candidate.deletedAt.length > 0;
 }
 
 function isLibraryFile(value: unknown): value is LibraryFile {
@@ -44,6 +63,9 @@ function isLibraryFile(value: unknown): value is LibraryFile {
     candidate.records.every(isLibraryRecord) &&
     (candidate.colors === undefined || (
       Array.isArray(candidate.colors) && candidate.colors.every(isLibraryRecord)
+    )) &&
+    (candidate.tombstones === undefined || (
+      Array.isArray(candidate.tombstones) && candidate.tombstones.every(isLibraryTombstone)
     ));
 }
 
@@ -101,6 +123,7 @@ function sendJson(response: import("node:http").ServerResponse, status: number, 
 function mergeLibraries(current: LibraryFile | null, incoming: LibraryFile): LibraryFile {
   const records = new Map<string, LibraryRecord>();
   const colors = new Map<string, LibraryRecord>();
+  const tombstones = new Map<string, LibraryTombstone>();
   for (const record of current?.records ?? []) records.set(record.id, record);
   for (const record of incoming.records) {
     const existing = records.get(record.id);
@@ -111,12 +134,28 @@ function mergeLibraries(current: LibraryFile | null, incoming: LibraryFile): Lib
     const existing = colors.get(color.id);
     if (!existing || color.updatedAt > existing.updatedAt) colors.set(color.id, color);
   }
+  for (const tombstone of current?.tombstones ?? []) {
+    tombstones.set(`${tombstone.kind}:${tombstone.id}`, tombstone);
+  }
+  for (const tombstone of incoming.tombstones ?? []) {
+    const key = `${tombstone.kind}:${tombstone.id}`;
+    const existing = tombstones.get(key);
+    if (!existing || tombstone.deletedAt > existing.deletedAt) {
+      tombstones.set(key, tombstone);
+    }
+  }
+  for (const tombstone of tombstones.values()) {
+    const collection = tombstone.kind === "project" ? records : colors;
+    const record = collection.get(tombstone.id);
+    if (record && record.updatedAt <= tombstone.deletedAt) collection.delete(tombstone.id);
+  }
   return {
     kind: "cauce-library",
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
     records: Array.from(records.values()),
-    colors: Array.from(colors.values())
+    colors: Array.from(colors.values()),
+    tombstones: Array.from(tombstones.values())
   };
 }
 
@@ -158,8 +197,8 @@ function cauceLibraryPlugin(): Plugin {
           if (request.method === "DELETE") {
             const projectId = url.searchParams.get("id");
             const colorId = url.searchParams.get("colorId");
-            if (!projectId && !colorId) {
-              sendJson(response, 400, { error: "Falta el identificador del guardado." });
+            if ((!projectId && !colorId) || (projectId && colorId)) {
+              sendJson(response, 400, { error: "Indica un único identificador de guardado." });
               return;
             }
             const current = await readLibrary();
@@ -167,16 +206,19 @@ function cauceLibraryPlugin(): Plugin {
               sendJson(response, 404, { error: "Biblioteca persistente todavía no inicializada." });
               return;
             }
-            const nextLibrary: LibraryFile = {
-              ...current,
+            const nextLibrary = mergeLibraries(current, {
+              kind: "cauce-library",
+              schemaVersion: 1,
               createdAt: new Date().toISOString(),
-              records: projectId
-                ? current.records.filter((record) => record.id !== projectId)
-                : current.records,
-              colors: colorId
-                ? (current.colors ?? []).filter((record) => record.id !== colorId)
-                : current.colors ?? []
-            };
+              records: [],
+              colors: [],
+              tombstones: [{
+                schemaVersion: 1,
+                id: projectId ?? colorId!,
+                kind: projectId ? "project" : "color",
+                deletedAt: new Date().toISOString()
+              }]
+            });
             await writeLibrary(nextLibrary);
             sendJson(response, 200, nextLibrary);
             return;

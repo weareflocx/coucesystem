@@ -265,8 +265,8 @@
             <div class="saved-dialog-heading">
               <span class="export-index">02</span>
               <div>
-                <h3 id="saved-library-title">Biblioteca local</h3>
-                <p>Configuraciones almacenadas únicamente en este navegador.</p>
+                <h3 id="saved-library-title">Biblioteca</h3>
+                <p>Se guarda primero en este navegador y puede sincronizarse con Netlify.</p>
               </div>
             </div>
             <label class="control-label" for="saved-project-select">
@@ -296,6 +296,26 @@
             </div>
             <button class="button button-quiet" id="import-preset-button" type="button">Importar preset .cauce</button>
             <input id="import-preset-input" type="file" accept=".json,.cauce.json,application/json" hidden>
+          </section>
+
+          <section class="saved-dialog-section" aria-labelledby="remote-library-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">04</span>
+              <div>
+                <h3 id="remote-library-title">Sincronización Netlify</h3>
+                <p>Combina proyectos y paletas entre dispositivos. La clave permanece únicamente durante esta sesión.</p>
+              </div>
+            </div>
+            <label class="control-label" for="remote-library-key-input">
+              <span>Clave de biblioteca</span>
+              <input id="remote-library-key-input" type="password" minlength="12" autocomplete="off" spellcheck="false" placeholder="Configura CAUCE_LIBRARY_KEY">
+            </label>
+            <div class="saved-actions" role="group" aria-label="Sincronización remota de biblioteca">
+              <button class="button" id="connect-remote-library-button" type="button">Conectar</button>
+              <button class="button button-quiet" id="disconnect-remote-library-button" type="button" disabled>Desconectar</button>
+            </div>
+            <p class="remote-library-status" id="remote-library-status" role="status" aria-live="polite">Modo local · este navegador</p>
+            <p class="inline-error" id="remote-library-error" role="alert" hidden></p>
           </section>
 
           <p class="inline-error saved-dialog-message" id="storage-error" role="alert" hidden></p>
@@ -334,7 +354,7 @@
               <span class="export-index">02</span>
               <div>
                 <h3 id="saved-colors-title">Colores guardados</h3>
-                <p>Persisten en la misma biblioteca local que los proyectos.</p>
+                <p>Persisten en la misma biblioteca que los proyectos.</p>
               </div>
             </div>
             <div class="saved-color-preview" id="selected-color-preview" aria-hidden="true"></div>

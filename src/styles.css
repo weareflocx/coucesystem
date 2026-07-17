@@ -1224,6 +1224,32 @@ input[type="color"]::-webkit-color-swatch {
   border-bottom: 1px solid var(--border);
 }
 
+.remote-library-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.remote-library-status::before {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: var(--border);
+  content: "";
+}
+
+.remote-library-status.is-connected {
+  color: var(--text);
+}
+
+.remote-library-status.is-connected::before {
+  background: var(--accent);
+}
+
 progress {
   width: 100%;
   height: 6px;

@@ -4,6 +4,7 @@ import type { EngineState, Palette } from "./types";
 const STORAGE_KEY = "cauce-studio.projects.v2";
 const LEGACY_STORAGE_KEY = "cauce-studio.projects.v1";
 const COLOR_STORAGE_KEY = "cauce-studio.colors.v1";
+const TOMBSTONE_STORAGE_KEY = "cauce-studio.tombstones.v1";
 const SCHEMA_VERSION = 2;
 const COLOR_SCHEMA_VERSION = 1;
 const LIBRARY_SCHEMA_VERSION = 1;
@@ -34,6 +35,13 @@ export interface SavedColorRecord {
   gradient: SavedColorGradient;
 }
 
+export interface SavedLibraryTombstone {
+  schemaVersion: 1;
+  id: string;
+  kind: "project" | "color";
+  deletedAt: string;
+}
+
 interface LegacySavedProjectRecord {
   schemaVersion: 1;
   id: string;
@@ -50,6 +58,7 @@ interface SavedLibraryBackup {
   createdAt: string;
   records: SavedProjectRecord[];
   colors: SavedColorRecord[];
+  tombstones: SavedLibraryTombstone[];
 }
 
 export interface LibraryBackupDownload {
@@ -74,7 +83,10 @@ export interface LibraryReplaceResult extends LibraryImportResult {
 }
 
 export function isLibraryStorageKey(key: string | null): boolean {
-  return key === STORAGE_KEY || key === LEGACY_STORAGE_KEY || key === COLOR_STORAGE_KEY;
+  return key === STORAGE_KEY ||
+    key === LEGACY_STORAGE_KEY ||
+    key === COLOR_STORAGE_KEY ||
+    key === TOMBSTONE_STORAGE_KEY;
 }
 
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
@@ -98,6 +110,17 @@ function isSavedColor(value: unknown): value is SavedColorRecord {
     Number.isFinite(gradient!.strength) &&
     Number.isFinite(gradient!.angle) &&
     Number.isFinite(gradient!.midpoint);
+}
+
+function isSavedLibraryTombstone(value: unknown): value is SavedLibraryTombstone {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<SavedLibraryTombstone>;
+  return candidate.schemaVersion === 1 &&
+    typeof candidate.id === "string" &&
+    candidate.id.length > 0 &&
+    (candidate.kind === "project" || candidate.kind === "color") &&
+    typeof candidate.deletedAt === "string" &&
+    candidate.deletedAt.length > 0;
 }
 
 function normalizeSavedColor(record: SavedColorRecord): SavedColorRecord {
@@ -171,10 +194,74 @@ function writeColorRecords(records: SavedColorRecord[]): void {
   window.localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(records));
 }
 
+function writeTombstones(tombstones: SavedLibraryTombstone[]): void {
+  window.localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+}
+
 function readColorRecords(): SavedColorRecord[] {
   return parseArray(window.localStorage.getItem(COLOR_STORAGE_KEY))
     .filter(isSavedColor)
     .map(normalizeSavedColor);
+}
+
+function readTombstones(): SavedLibraryTombstone[] {
+  return parseArray(window.localStorage.getItem(TOMBSTONE_STORAGE_KEY))
+    .filter(isSavedLibraryTombstone);
+}
+
+function tombstoneKey(tombstone: SavedLibraryTombstone): string {
+  return `${tombstone.kind}:${tombstone.id}`;
+}
+
+function mergeTombstones(
+  current: SavedLibraryTombstone[],
+  incoming: SavedLibraryTombstone[]
+): SavedLibraryTombstone[] {
+  const merged = new Map(current.map((tombstone) => [tombstoneKey(tombstone), tombstone]));
+  for (const tombstone of incoming) {
+    const key = tombstoneKey(tombstone);
+    const existing = merged.get(key);
+    if (!existing || tombstone.deletedAt > existing.deletedAt) {
+      merged.set(key, tombstone);
+    }
+  }
+  return Array.from(merged.values());
+}
+
+function applyProjectTombstones(
+  records: SavedProjectRecord[],
+  tombstones: SavedLibraryTombstone[]
+): SavedProjectRecord[] {
+  const deletedAtById = new Map(tombstones
+    .filter((tombstone) => tombstone.kind === "project")
+    .map((tombstone) => [tombstone.id, tombstone.deletedAt]));
+  return records.filter((record) => {
+    const deletedAt = deletedAtById.get(record.id);
+    return !deletedAt || record.updatedAt > deletedAt;
+  });
+}
+
+function applyColorTombstones(
+  records: SavedColorRecord[],
+  tombstones: SavedLibraryTombstone[]
+): SavedColorRecord[] {
+  const deletedAtById = new Map(tombstones
+    .filter((tombstone) => tombstone.kind === "color")
+    .map((tombstone) => [tombstone.id, tombstone.deletedAt]));
+  return records.filter((record) => {
+    const deletedAt = deletedAtById.get(record.id);
+    return !deletedAt || record.updatedAt > deletedAt;
+  });
+}
+
+function addTombstone(id: string, kind: SavedLibraryTombstone["kind"]): void {
+  const tombstone: SavedLibraryTombstone = {
+    schemaVersion: 1,
+    id,
+    kind,
+    deletedAt: new Date().toISOString()
+  };
+  writeTombstones(mergeTombstones(readTombstones(), [tombstone]));
 }
 
 function readRecords(): SavedProjectRecord[] {
@@ -219,6 +306,10 @@ function parseLibraryBackup(source: string): SavedLibraryBackup {
   if (!Array.isArray(colors) || !colors.every(isSavedColor)) {
     throw new Error("La copia contiene una o más paletas incompletas.");
   }
+  const tombstones = candidate.tombstones ?? [];
+  if (!Array.isArray(tombstones) || !tombstones.every(isSavedLibraryTombstone)) {
+    throw new Error("La copia contiene eliminaciones no válidas.");
+  }
   return {
     kind: "cauce-library",
     schemaVersion: LIBRARY_SCHEMA_VERSION,
@@ -226,16 +317,19 @@ function parseLibraryBackup(source: string): SavedLibraryBackup {
       ? candidate.createdAt
       : new Date().toISOString(),
     records: structuredClone(candidate.records),
-    colors: colors.map((record) => structuredClone(normalizeSavedColor(record)))
+    colors: colors.map((record) => structuredClone(normalizeSavedColor(record))),
+    tombstones: structuredClone(tombstones)
   };
 }
 
 export function listSavedProjects(): SavedProjectRecord[] {
-  return readRecords().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return applyProjectTombstones(readRecords(), readTombstones())
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export function listSavedColors(): SavedColorRecord[] {
-  return readColorRecords().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return applyColorTombstones(readColorRecords(), readTombstones())
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export function saveColor(
@@ -258,7 +352,9 @@ export function saveColor(
 }
 
 export function deleteColor(colorId: string): void {
-  writeColorRecords(readColorRecords().filter((record) => record.id !== colorId));
+  const records = readColorRecords();
+  if (records.some((record) => record.id === colorId)) addTombstone(colorId, "color");
+  writeColorRecords(records.filter((record) => record.id !== colorId));
 }
 
 export function saveProject(name: string, state: EngineState, time: number): SavedProjectRecord {
@@ -279,18 +375,22 @@ export function saveProject(name: string, state: EngineState, time: number): Sav
 }
 
 export function deleteProject(projectId: string): void {
-  writeRecords(readRecords().filter((record) => record.id !== projectId));
+  const records = readRecords();
+  if (records.some((record) => record.id === projectId)) addTombstone(projectId, "project");
+  writeRecords(records.filter((record) => record.id !== projectId));
 }
 
 export function createLibraryBackupDownload(): LibraryBackupDownload {
-  const records = readRecords();
-  const colors = readColorRecords();
+  const tombstones = readTombstones();
+  const records = applyProjectTombstones(readRecords(), tombstones);
+  const colors = applyColorTombstones(readColorRecords(), tombstones);
   const backup: SavedLibraryBackup = {
     kind: "cauce-library",
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     createdAt: new Date().toISOString(),
     records: structuredClone(records),
-    colors: structuredClone(colors)
+    colors: structuredClone(colors),
+    tombstones: structuredClone(tombstones)
   };
   return {
     blob: new Blob([`${JSON.stringify(backup, null, 2)}\n`], {
@@ -304,6 +404,7 @@ export function createLibraryBackupDownload(): LibraryBackupDownload {
 
 export function importLibraryBackup(source: string): LibraryImportResult {
   const candidate = parseLibraryBackup(source);
+  const tombstones = mergeTombstones(readTombstones(), candidate.tombstones);
 
   const recordsById = new Map(readRecords().map((record) => [record.id, record]));
   let added = 0;
@@ -319,8 +420,7 @@ export function importLibraryBackup(source: string): LibraryImportResult {
     }
   }
 
-  const records = Array.from(recordsById.values());
-  if (added > 0 || updated > 0) writeRecords(records);
+  const records = applyProjectTombstones(Array.from(recordsById.values()), tombstones);
   const colorsById = new Map(readColorRecords().map((record) => [record.id, record]));
   let colorsAdded = 0;
   let colorsUpdated = 0;
@@ -334,8 +434,10 @@ export function importLibraryBackup(source: string): LibraryImportResult {
       colorsUpdated += 1;
     }
   }
-  const colors = Array.from(colorsById.values());
-  if (colorsAdded > 0 || colorsUpdated > 0) writeColorRecords(colors);
+  const colors = applyColorTombstones(Array.from(colorsById.values()), tombstones);
+  writeRecords(records);
+  writeColorRecords(colors);
+  writeTombstones(tombstones);
   return {
     added,
     updated,
@@ -348,39 +450,42 @@ export function importLibraryBackup(source: string): LibraryImportResult {
 
 export function replaceLibraryBackup(source: string): LibraryReplaceResult {
   const candidate = parseLibraryBackup(source);
+  const records = applyProjectTombstones(candidate.records, candidate.tombstones);
+  const colors = applyColorTombstones(candidate.colors, candidate.tombstones);
   const currentById = new Map(readRecords().map((record) => [record.id, record]));
   let added = 0;
   let updated = 0;
 
-  for (const record of candidate.records) {
+  for (const record of records) {
     const existing = currentById.get(record.id);
     if (!existing) added += 1;
     else if (record.updatedAt !== existing.updatedAt) updated += 1;
   }
 
-  const nextIds = new Set(candidate.records.map((record) => record.id));
+  const nextIds = new Set(records.map((record) => record.id));
   const removed = Array.from(currentById.keys()).filter((id) => !nextIds.has(id)).length;
   const currentColorsById = new Map(readColorRecords().map((record) => [record.id, record]));
   let colorsAdded = 0;
   let colorsUpdated = 0;
-  for (const record of candidate.colors) {
+  for (const record of colors) {
     const existing = currentColorsById.get(record.id);
     if (!existing) colorsAdded += 1;
     else if (record.updatedAt !== existing.updatedAt) colorsUpdated += 1;
   }
-  const nextColorIds = new Set(candidate.colors.map((record) => record.id));
+  const nextColorIds = new Set(colors.map((record) => record.id));
   const colorsRemoved = Array.from(currentColorsById.keys())
     .filter((id) => !nextColorIds.has(id)).length;
-  writeRecords(candidate.records);
-  writeColorRecords(candidate.colors);
+  writeRecords(records);
+  writeColorRecords(colors);
+  writeTombstones(candidate.tombstones);
   return {
     added,
     updated,
     removed,
-    total: candidate.records.length,
+    total: records.length,
     colorsAdded,
     colorsUpdated,
     colorsRemoved,
-    colorsTotal: candidate.colors.length
+    colorsTotal: colors.length
   };
 }

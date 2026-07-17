@@ -4,9 +4,12 @@ import { OUTPUT_FORMATS, getOutputFormat } from "./core/formats";
 import { UndoHistory, type HistoryEntry } from "./core/history";
 import { decodeImageField } from "./core/image-field";
 import {
+  clearRemoteLibraryKey,
   deleteDurableColor,
   deleteDurableProject,
+  hasRemoteLibraryKey,
   persistDurableLibrary,
+  setRemoteLibraryKey,
   syncDurableLibrary
 } from "./core/durable-library";
 import {
@@ -68,6 +71,11 @@ const importLibraryInput = byId<HTMLInputElement>("import-library-input");
 const importPresetButton = byId<HTMLButtonElement>("import-preset-button");
 const importPresetInput = byId<HTMLInputElement>("import-preset-input");
 const storageError = byId<HTMLParagraphElement>("storage-error");
+const remoteLibraryKeyInput = byId<HTMLInputElement>("remote-library-key-input");
+const connectRemoteLibraryButton = byId<HTMLButtonElement>("connect-remote-library-button");
+const disconnectRemoteLibraryButton = byId<HTMLButtonElement>("disconnect-remote-library-button");
+const remoteLibraryStatus = byId<HTMLParagraphElement>("remote-library-status");
+const remoteLibraryError = byId<HTMLParagraphElement>("remote-library-error");
 const deleteProjectDialog = byId<HTMLDialogElement>("delete-project-dialog");
 const confirmDeleteProjectButton = byId<HTMLButtonElement>("confirm-delete-project-button");
 const projectControls = byId<HTMLDivElement>("project-controls");
@@ -364,6 +372,29 @@ function populateStaticSelects(): void {
 function setStorageError(message: string): void {
   storageError.textContent = message;
   storageError.hidden = message.length === 0;
+}
+
+function setRemoteLibraryError(message: string): void {
+  remoteLibraryError.textContent = message;
+  remoteLibraryError.hidden = message.length === 0;
+}
+
+function updateRemoteLibraryUi(message = ""): void {
+  const connected = hasRemoteLibraryKey();
+  disconnectRemoteLibraryButton.disabled = !connected;
+  remoteLibraryStatus.classList.toggle("is-connected", connected);
+  remoteLibraryStatus.textContent = message || (connected
+    ? "Netlify · clave activa durante esta sesión"
+    : "Modo local · este navegador");
+  remoteLibraryKeyInput.placeholder = connected
+    ? "Introduce otra clave para reconectar"
+    : "Configura CAUCE_LIBRARY_KEY";
+}
+
+function durableLibraryName(mode: "local-file" | "netlify"): string {
+  return mode === "netlify"
+    ? "biblioteca sincronizada"
+    : "biblioteca local persistente";
 }
 
 function setColorLibraryError(message: string): void {
@@ -1038,11 +1069,56 @@ clearImageButton.addEventListener("click", () => {
 
 openSavedDialogButton.addEventListener("click", () => {
   setStorageError("");
+  setRemoteLibraryError("");
+  updateRemoteLibraryUi();
   savedDialog.showModal();
 });
 
 closeSavedDialogButton.addEventListener("click", () => {
   savedDialog.close();
+});
+
+connectRemoteLibraryButton.addEventListener("click", async () => {
+  const key = remoteLibraryKeyInput.value;
+  connectRemoteLibraryButton.disabled = true;
+  setRemoteLibraryError("");
+  try {
+    setRemoteLibraryKey(key);
+    updateRemoteLibraryUi("Netlify · sincronizando…");
+    const result = await syncDurableLibrary();
+    if (!result || result.mode !== "netlify") {
+      throw new Error("La ruta de sincronización de Netlify no está disponible.");
+    }
+    refreshSavedProjects(savedProjectSelect.value);
+    refreshSavedColors(savedColorSelect.value);
+    remoteLibraryKeyInput.value = "";
+    updateRemoteLibraryUi(
+      `Netlify sincronizado · ${result.total} proyectos · ${result.colorsTotal} paletas`
+    );
+    appStatus.textContent = "Biblioteca local y Netlify sincronizados.";
+  } catch (error) {
+    clearRemoteLibraryKey();
+    updateRemoteLibraryUi();
+    setRemoteLibraryError(error instanceof Error
+      ? error.message
+      : "No se pudo conectar la biblioteca de Netlify.");
+  } finally {
+    connectRemoteLibraryButton.disabled = false;
+  }
+});
+
+disconnectRemoteLibraryButton.addEventListener("click", () => {
+  clearRemoteLibraryKey();
+  remoteLibraryKeyInput.value = "";
+  setRemoteLibraryError("");
+  updateRemoteLibraryUi();
+  appStatus.textContent = "Sincronización remota desconectada; la biblioteca local se conserva.";
+});
+
+remoteLibraryKeyInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  connectRemoteLibraryButton.click();
 });
 
 openColorDialogButton.addEventListener("click", () => {
@@ -1080,11 +1156,16 @@ saveColorButton.addEventListener("click", async () => {
     try {
       const durable = await persistDurableLibrary();
       appStatus.textContent = durable
-        ? `Paleta “${record.name}” guardada en la biblioteca persistente.`
+        ? `Paleta “${record.name}” guardada en la ${durableLibraryName(durable.mode)}.`
         : `Paleta “${record.name}” guardada en este navegador.`;
+      if (durable?.mode === "netlify") {
+        updateRemoteLibraryUi(
+          `Netlify sincronizado · ${durable.total} proyectos · ${durable.colorsTotal} paletas`
+        );
+      }
     } catch (error) {
       setColorLibraryError(
-        `La paleta está en el navegador, pero el archivo persistente falló: ${
+        `La paleta está en el navegador, pero la sincronización persistente falló: ${
           error instanceof Error ? error.message : "error desconocido"
         }`
       );
@@ -1122,14 +1203,23 @@ confirmDeleteColorButton.addEventListener("click", async () => {
   if (!pendingDeleteColorId) return;
   const colorId = pendingDeleteColorId;
   const record = savedColors.find((candidate) => candidate.id === colorId);
+  deleteSavedColor(colorId);
+  refreshSavedColors();
   try {
-    await deleteDurableColor(colorId);
-    deleteSavedColor(colorId);
-    refreshSavedColors();
+    const durable = await deleteDurableColor(colorId);
     setColorLibraryError("");
     appStatus.textContent = record ? `Paleta “${record.name}” eliminada.` : "Paleta eliminada.";
+    if (durable?.mode === "netlify") {
+      updateRemoteLibraryUi(
+        `Netlify sincronizado · ${durable.total} proyectos · ${durable.colorsTotal} paletas`
+      );
+    }
   } catch (error) {
-    setColorLibraryError(error instanceof Error ? error.message : "No se pudo eliminar la paleta.");
+    setColorLibraryError(
+      `La paleta se eliminó localmente, pero falta sincronizar ese cambio: ${
+        error instanceof Error ? error.message : "error desconocido"
+      }`
+    );
   } finally {
     pendingDeleteColorId = "";
   }
@@ -1179,11 +1269,16 @@ saveProjectButton.addEventListener("click", async () => {
         ? " La fotografía temporal no forma parte del guardado."
         : "";
       appStatus.textContent = (durable
-        ? `“${record.name}” guardado en la biblioteca local persistente.`
+        ? `“${record.name}” guardado en la ${durableLibraryName(durable.mode)}.`
         : `“${record.name}” guardado en este navegador.`) + imageNote;
+      if (durable?.mode === "netlify") {
+        updateRemoteLibraryUi(
+          `Netlify sincronizado · ${durable.total} proyectos · ${durable.colorsTotal} paletas`
+        );
+      }
     } catch (error) {
       setStorageError(
-        `“${record.name}” está en el navegador, pero el archivo persistente falló: ${
+        `“${record.name}” está en el navegador, pero la sincronización persistente falló: ${
           error instanceof Error ? error.message : "error desconocido"
         }`
       );
@@ -1226,14 +1321,23 @@ confirmDeleteProjectButton.addEventListener("click", async () => {
   if (!pendingDeleteId) return;
   const projectId = pendingDeleteId;
   const record = savedProjects.find((candidate) => candidate.id === projectId);
+  deleteSavedProject(projectId);
+  refreshSavedProjects();
   try {
-    await deleteDurableProject(projectId);
-    deleteSavedProject(projectId);
-    refreshSavedProjects();
+    const durable = await deleteDurableProject(projectId);
     setStorageError("");
     appStatus.textContent = record ? `“${record.name}” eliminado.` : "Guardado eliminado.";
+    if (durable?.mode === "netlify") {
+      updateRemoteLibraryUi(
+        `Netlify sincronizado · ${durable.total} proyectos · ${durable.colorsTotal} paletas`
+      );
+    }
   } catch (error) {
-    setStorageError(error instanceof Error ? error.message : "No se pudo eliminar el guardado.");
+    setStorageError(
+      `El guardado se eliminó localmente, pero falta sincronizar ese cambio: ${
+        error instanceof Error ? error.message : "error desconocido"
+      }`
+    );
   } finally {
     pendingDeleteId = "";
   }
@@ -1999,6 +2103,7 @@ resizeObserver.observe(canvasStage);
 populateStaticSelects();
 refreshSavedProjects();
 refreshSavedColors();
+updateRemoteLibraryUi();
 renderProjectControls(getProject(state.projectId));
 updateStaticUi();
 updateHistoryButtons();
@@ -2029,7 +2134,14 @@ async function initializeLibraryPersistence(): Promise<void> {
     refreshSavedProjects();
     refreshSavedColors();
     if (durableResult?.initialized) {
-      appStatus.textContent = `Biblioteca persistente conectada: ${durableResult.total} proyectos · ${durableResult.colorsTotal} paletas.`;
+      appStatus.textContent = durableResult.mode === "netlify"
+        ? `Netlify sincronizado: ${durableResult.total} proyectos · ${durableResult.colorsTotal} paletas.`
+        : `Biblioteca local persistente conectada: ${durableResult.total} proyectos · ${durableResult.colorsTotal} paletas.`;
+      if (durableResult.mode === "netlify") {
+        updateRemoteLibraryUi(
+          `Netlify sincronizado · ${durableResult.total} proyectos · ${durableResult.colorsTotal} paletas`
+        );
+      }
     }
 
     if (!legacyOrigin) {
@@ -2052,6 +2164,12 @@ async function initializeLibraryPersistence(): Promise<void> {
     appStatus.textContent = error instanceof Error
       ? error.message
       : "No se pudo conectar la biblioteca persistente.";
+    if (hasRemoteLibraryKey()) {
+      updateRemoteLibraryUi("Netlify · sincronización pendiente");
+      setRemoteLibraryError(error instanceof Error
+        ? error.message
+        : "No se pudo sincronizar la biblioteca de Netlify.");
+    }
   }
 }
 
