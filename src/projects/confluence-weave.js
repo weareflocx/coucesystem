@@ -1,4 +1,14 @@
-import { TAU, clamp, parameter, positiveModulo } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  canvasGradientStyle,
+  clamp,
+  gradientControlDefinitions,
+  parameter,
+  positiveModulo,
+  svgGradientDefinition
+} from "./shared.js";
+import { adaptiveAxisScale, fitBoundsToArtboard } from "./composition.js";
 
 const PROJECT_ID = "confluence-weave";
 const GRID_SIZE = 160;
@@ -239,15 +249,28 @@ function stitchLoops(segments) {
 function createGeometry(frame) {
   const field = createDensityField(frame);
   const loops = stitchLoops(extractSegments(field));
-  const centerX = frame.width * 0.5;
-  const centerY = frame.height * 0.5;
-  const scale = Math.min(frame.width, frame.height) * 0.47;
-  const gridToScreen = scale * 2 / GRID_SIZE;
+  const formatScale = adaptiveAxisScale(frame, 0.34, 1.3);
+  const localLoops = loops.map((loop) => loop.map(([x, y]) => {
+    const localX = (x - GRID_SIZE * 0.5) * 2 / GRID_SIZE * formatScale.x;
+    const localY = (y - GRID_SIZE * 0.5) * 2 / GRID_SIZE * formatScale.y;
+    return [localX, localY];
+  }));
+
+  if (localLoops.length === 0) {
+    return { loops: [], edgeWidth: Math.min(frame.width, frame.height) * 0.0008 };
+  }
+
+  const fit = fitBoundsToArtboard(frame, {
+    minX: -formatScale.x,
+    minY: -formatScale.y,
+    maxX: formatScale.x,
+    maxY: formatScale.y
+  }, 0.08);
 
   return {
-    loops: loops.map((loop) => loop.map(([x, y]) => [
-      centerX + (x - GRID_SIZE * 0.5) * gridToScreen,
-      centerY + (y - GRID_SIZE * 0.5) * gridToScreen
+    loops: localLoops.map((loop) => loop.map(([x, y]) => [
+      x * fit.scale + fit.offsetX,
+      y * fit.scale + fit.offsetY
     ])),
     edgeWidth: Math.min(frame.width, frame.height) * 0.0008
   };
@@ -271,9 +294,10 @@ function render(context, frame) {
 
   context.beginPath();
   for (const loop of geometry.loops) appendLoop(context, loop);
-  context.fillStyle = frame.palette.foreground;
+  const paint = canvasGradientStyle(context, frame, appearanceParameters(frame));
+  context.fillStyle = paint;
   context.fill("evenodd");
-  context.strokeStyle = frame.palette.foreground;
+  context.strokeStyle = paint;
   context.lineWidth = geometry.edgeWidth;
   context.lineJoin = "round";
   context.stroke();
@@ -289,11 +313,12 @@ function loopToPath(loop) {
 
 function toSvg(frame) {
   const geometry = createGeometry(frame);
+  const gradient = svgGradientDefinition(frame, appearanceParameters(frame), "confluence-weave-gradient");
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
   const path = geometry.loops.map(loopToPath).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 06 — Confluence Weave</title>${background}<path d="${path}" fill="${frame.palette.foreground}" fill-rule="evenodd" stroke="${frame.palette.foreground}" stroke-width="${geometry.edgeWidth.toFixed(3)}" stroke-linejoin="round"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 06 — Confluence Weave</title>${gradient.definition}${background}<path d="${path}" fill="${gradient.paint}" fill-rule="evenodd" stroke="${gradient.paint}" stroke-width="${geometry.edgeWidth.toFixed(3)}" stroke-linejoin="round"/></svg>`;
 }
 
 export const confluenceWeaveProject = {
@@ -316,7 +341,8 @@ export const confluenceWeaveProject = {
     { key: "rotation", label: "Rotación", min: -180, max: 180, step: 1, defaultValue: 43, digits: 0, suffix: "°" },
     { key: "circulation", label: "Circulación", min: 0, max: 3, step: 1, defaultValue: 1, digits: 0 },
     { key: "breathing", label: "Respiración", min: 0, max: 0.25, step: 0.01, defaultValue: 0.1, digits: 2 },
-    { key: "precession", label: "Precesión", min: 0, max: 18, step: 0.5, defaultValue: 3.5, digits: 1, suffix: "°" }
+    { key: "precession", label: "Precesión", min: 0, max: 18, step: 0.5, defaultValue: 3.5, digits: 1, suffix: "°" },
+    ...gradientControlDefinitions(0, 0, 0.46)
   ],
   defaults: {
     channels: 4,
@@ -329,7 +355,10 @@ export const confluenceWeaveProject = {
     rotation: 43,
     circulation: 1,
     breathing: 0.1,
-    precession: 3.5
+    precession: 3.5,
+    gradientStrength: 0,
+    gradientAngle: 0,
+    gradientMidpoint: 0.46
   },
   render,
   toSvg

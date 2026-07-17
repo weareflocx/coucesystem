@@ -14,7 +14,22 @@
       <aside class="sidebar" aria-labelledby="app-title">
         <header class="sidebar-header">
           <h1 id="app-title">Cauce system</h1>
+          <div class="history-actions" role="group" aria-label="Historial de edición">
+            <button class="button button-quiet button-compact" id="undo-button" type="button" aria-keyshortcuts="Meta+Z Control+Z" disabled>Deshacer</button>
+            <button class="button button-quiet button-compact" id="redo-button" type="button" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y" disabled>Rehacer</button>
+          </div>
         </header>
+
+        <section class="sidebar-section image-source-section" id="image-source-section" aria-labelledby="image-source-title" hidden>
+          <div class="section-heading">
+            <h2 class="section-label" id="image-source-title">Imagen</h2>
+            <button class="button button-quiet button-compact" id="clear-image-button" type="button" disabled>Quitar</button>
+          </div>
+          <button class="button image-upload-button" id="image-upload-button" type="button">Seleccionar fotografía</button>
+          <input id="image-upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" hidden>
+          <p class="image-source-status" id="image-source-status" role="status" aria-live="polite">Carga una imagen para construir el campo.</p>
+          <p class="inline-error" id="image-source-error" role="alert" hidden></p>
+        </section>
 
         <section class="sidebar-section" aria-labelledby="parameters-section-title">
           <div class="section-heading">
@@ -27,49 +42,64 @@
         <section class="sidebar-section" aria-labelledby="color-section-title">
           <div class="section-heading">
             <h2 class="section-label" id="color-section-title">Color</h2>
-            <button class="button button-quiet button-compact" id="invert-button" type="button">Invertir</button>
+            <button class="button button-quiet button-compact" id="open-color-dialog-button" type="button">Biblioteca</button>
+          </div>
+          <div class="palette-preview" id="palette-preview" aria-label="Vista previa de la paleta actual">
+            <span data-color-role="background"></span>
+            <span data-color-role="foreground"></span>
+            <span data-color-role="accent"></span>
+            <span data-color-role="secondary"></span>
           </div>
           <fieldset class="color-grid">
             <legend class="sr-only">Paleta del proyecto</legend>
-            <label class="control-label" for="background-color">
-              <span class="label-row"><span>Fondo</span><output id="background-color-value">#11110F</output></span>
-              <input id="background-color" type="color" value="#11110f">
-            </label>
-            <label class="control-label" for="foreground-color">
-              <span class="label-row"><span>Trazo</span><output id="foreground-color-value">#F4F3EE</output></span>
-              <input id="foreground-color" type="color" value="#f4f3ee">
-            </label>
-            <label class="control-label" for="accent-color">
-              <span class="label-row"><span>Acento</span><output id="accent-color-value">#AEB7FF</output></span>
-              <input id="accent-color" type="color" value="#aeb7ff">
-            </label>
+            <div class="color-control">
+              <label for="background-color">Fondo</label>
+              <div class="color-value-control">
+                <input id="background-color" type="color" value="#11110f" aria-label="Elegir color de fondo">
+                <label class="sr-only" for="background-color-value">Color de fondo hexadecimal</label>
+                <input class="color-hex-input" id="background-color-value" type="text" value="#11110F" maxlength="7" spellcheck="false" autocomplete="off">
+              </div>
+            </div>
+            <div class="color-control">
+              <label for="foreground-color">Trazo</label>
+              <div class="color-value-control">
+                <input id="foreground-color" type="color" value="#f4f3ee" aria-label="Elegir color de trazo">
+                <label class="sr-only" for="foreground-color-value">Color de trazo hexadecimal</label>
+                <input class="color-hex-input" id="foreground-color-value" type="text" value="#F4F3EE" maxlength="7" spellcheck="false" autocomplete="off">
+              </div>
+            </div>
+            <div class="color-control">
+              <label for="accent-color">Acento</label>
+              <div class="color-value-control">
+                <input id="accent-color" type="color" value="#aeb7ff" aria-label="Elegir color de acento">
+                <label class="sr-only" for="accent-color-value">Color de acento hexadecimal</label>
+                <input class="color-hex-input" id="accent-color-value" type="text" value="#AEB7FF" maxlength="7" spellcheck="false" autocomplete="off">
+              </div>
+            </div>
+            <div class="color-control">
+              <label for="secondary-color">Final</label>
+              <div class="color-value-control">
+                <input id="secondary-color" type="color" value="#8ecfc2" aria-label="Elegir color final del gradiente">
+                <label class="sr-only" for="secondary-color-value">Color final hexadecimal</label>
+                <input class="color-hex-input" id="secondary-color-value" type="text" value="#8ECFC2" maxlength="7" spellcheck="false" autocomplete="off">
+              </div>
+            </div>
           </fieldset>
+          <button class="button button-quiet color-invert-button" id="invert-button" type="button">Invertir fondo y trazo</button>
+          <p class="inline-error color-error" id="color-error" role="alert" hidden></p>
+          <section class="gradient-editor" id="gradient-editor" aria-labelledby="gradient-editor-title" hidden>
+            <div class="gradient-editor-heading">
+              <h3 id="gradient-editor-title">Gradiente perceptual</h3>
+              <span>OKLab</span>
+            </div>
+            <div class="gradient-preview" id="gradient-preview" aria-hidden="true"></div>
+            <div class="control-stack" id="gradient-controls"></div>
+          </section>
         </section>
 
         <section class="sidebar-section" id="appearance-section" aria-labelledby="appearance-section-title" hidden>
           <h2 class="section-label" id="appearance-section-title">Apariencia</h2>
           <div class="control-stack" id="appearance-controls"></div>
-        </section>
-
-        <section class="sidebar-section" aria-labelledby="playback-section-title">
-          <div class="section-heading">
-            <h2 class="section-label" id="playback-section-title">Tiempo</h2>
-            <button class="button button-compact" id="play-button" type="button" aria-pressed="true">Pausar</button>
-          </div>
-          <div class="control-stack">
-            <label class="control-label" for="speed-input">
-              <span class="label-row"><span>Velocidad</span><output id="speed-value">1.00×</output></span>
-              <input id="speed-input" type="range" min="0.25" max="2" step="0.05" value="1">
-            </label>
-            <label class="control-label" for="duration-input">
-              <span class="label-row"><span>Duración del bucle</span><output id="duration-value">8.0 s</output></span>
-              <input id="duration-input" type="range" min="2" max="20" step="0.5" value="8">
-            </label>
-            <label class="control-label" for="timeline-input">
-              <span class="label-row"><span>Posición</span><output id="timeline-value">0%</output></span>
-              <input id="timeline-input" type="range" min="0" max="1" step="0.001" value="0">
-            </label>
-          </div>
         </section>
 
         <footer class="sidebar-status">
@@ -106,23 +136,101 @@
         <div class="canvas-stage" id="canvas-stage" role="group" tabindex="-1">
           <canvas class="canvas-surface is-active" id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
           <canvas class="canvas-surface" id="cauce-three-canvas" aria-label="Vista previa 3D animada del proyecto Cauce" aria-hidden="true"></canvas>
-          <section class="viewport-hud" id="viewport-hud" aria-label="Controles de vista" aria-describedby="viewport-help" hidden>
-            <div class="viewport-readout">
-              <span>VIEW</span>
-              <output id="viewport-value">100% · 0° / 0°</output>
-            </div>
-            <div class="viewport-actions" role="group" aria-label="Modo y zoom del lienzo">
-              <button class="viewport-button" id="viewport-orbit-button" type="button" aria-pressed="true">Orbitar</button>
-              <button class="viewport-button" id="viewport-pan-button" type="button" aria-pressed="false">Mover</button>
-              <button class="viewport-button viewport-button-icon" id="viewport-zoom-out-button" type="button" aria-label="Alejar vista" title="Alejar vista">−</button>
-              <button class="viewport-button viewport-button-icon" id="viewport-zoom-in-button" type="button" aria-label="Acercar vista" title="Acercar vista">+</button>
-              <button class="viewport-button" id="viewport-reset-button" type="button">Reencuadrar</button>
-            </div>
-            <p id="viewport-help">Arrastra · Mayús/derecho mueve · Rueda aproxima</p>
-          </section>
           <p class="canvas-message" id="canvas-message">Iniciando motor gráfico…</p>
           <p class="canvas-error" id="canvas-error" role="alert" hidden></p>
         </div>
+        <footer class="canvas-footer" aria-label="Controles de tiempo y vista">
+          <section class="footer-time" aria-labelledby="playback-section-title">
+            <div class="footer-section-lead">
+              <h2 class="canvas-footer-label" id="playback-section-title">Tiempo</h2>
+              <button class="button button-compact footer-icon-button" id="play-button" type="button" aria-label="Pausar" aria-pressed="true" title="Pausar" data-playback-state="playing">
+                <svg class="control-icon icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>
+                <svg class="control-icon icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+              </button>
+            </div>
+            <label class="control-label footer-control footer-timeline" for="timeline-input">
+              <span class="label-row"><span>Posición</span><output id="timeline-value">0%</output></span>
+              <span class="timeline-track">
+                <input id="timeline-input" type="range" min="0" max="1" step="0.001" value="0">
+                <span class="timeline-loop-marker" id="timeline-loop-marker" aria-hidden="true" hidden></span>
+              </span>
+            </label>
+            <div class="footer-stepper" role="group" aria-labelledby="speed-label">
+              <span class="footer-control-label" id="speed-label">Velocidad</span>
+              <div class="stepper-control">
+                <button class="button button-compact stepper-button" id="speed-decrease-button" type="button" aria-label="Reducir velocidad" title="Reducir velocidad">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <label class="stepper-value" for="speed-input">
+                  <input id="speed-input" type="number" inputmode="decimal" min="0.25" max="2" step="0.05" value="1.00" aria-label="Velocidad">
+                  <span aria-hidden="true">×</span>
+                </label>
+                <button class="button button-compact stepper-button" id="speed-increase-button" type="button" aria-label="Aumentar velocidad" title="Aumentar velocidad">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="footer-stepper" role="group" aria-labelledby="duration-label">
+              <span class="footer-control-label" id="duration-label">Duración</span>
+              <div class="stepper-control">
+                <button class="button button-compact stepper-button" id="duration-decrease-button" type="button" aria-label="Reducir duración" title="Reducir duración">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <label class="stepper-value" for="duration-input">
+                  <input id="duration-input" type="number" inputmode="decimal" min="2" max="20" step="0.5" value="8.0" aria-label="Duración del bucle">
+                  <span aria-hidden="true">s</span>
+                </label>
+                <button class="button button-compact stepper-button" id="duration-increase-button" type="button" aria-label="Aumentar duración" title="Aumentar duración">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="loop-start-control footer-loop-start" id="loop-start-control" hidden>
+              <div class="label-row">
+                <span>Inicio del bucle</span>
+                <output id="loop-start-value">0%</output>
+              </div>
+              <div class="loop-start-actions" role="group" aria-label="Inicio personalizado del bucle">
+                <button class="button button-compact footer-icon-button" id="set-loop-start-button" type="button" aria-label="Fijar aquí el inicio del bucle" title="Fijar aquí el inicio del bucle">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 1h11l-2 4 2 4H6"/></svg>
+                </button>
+                <button class="button button-quiet button-compact footer-icon-button" id="reset-loop-start-button" type="button" aria-label="Restaurar el inicio original" title="Restaurar el inicio original">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5"/></svg>
+                </button>
+              </div>
+            </div>
+          </section>
+          <section class="viewport-hud" id="viewport-hud" aria-label="Controles de vista" aria-describedby="viewport-help" hidden>
+            <div class="viewport-readout">
+              <span>View</span>
+              <output id="viewport-value">100% · 0° / 0°</output>
+            </div>
+            <div class="viewport-actions" role="group" aria-label="Modo y zoom del lienzo">
+              <button class="viewport-button viewport-button-icon" id="viewport-orbit-button" type="button" aria-label="Orbitar" aria-pressed="true" title="Orbitar">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M4 8.5c2.4-4.1 8.8-5.1 13.7-2.3s6.6 8.5 4.3 12.6M20 15.5c-2.4 4.1-8.8 5.1-13.7 2.3S-.3 9.3 2 5.2"/></svg>
+              </button>
+              <button class="viewport-button viewport-button-icon" id="viewport-pan-button" type="button" aria-label="Mover" aria-pressed="false" title="Mover">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20m0-20-3 3m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/></svg>
+              </button>
+              <div class="viewport-zoom-stepper" role="group" aria-label="Zoom del lienzo">
+                <button class="viewport-button viewport-button-icon" id="viewport-zoom-out-button" type="button" aria-label="Alejar vista" title="Alejar vista">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <label class="viewport-zoom-value" for="viewport-zoom-input">
+                  <input id="viewport-zoom-input" type="number" inputmode="numeric" min="35" max="400" step="5" value="100" aria-label="Zoom de la vista en porcentaje">
+                  <span aria-hidden="true">%</span>
+                </label>
+                <button class="viewport-button viewport-button-icon" id="viewport-zoom-in-button" type="button" aria-label="Acercar vista" title="Acercar vista">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+              <button class="viewport-button viewport-button-icon" id="viewport-reset-button" type="button" aria-label="Reencuadrar" title="Reencuadrar">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"/></svg>
+              </button>
+            </div>
+            <p id="viewport-help">Arrastra · Mayús/derecho mueve · Rueda aproxima</p>
+          </section>
+        </footer>
       </section>
     </main>
 
@@ -171,6 +279,11 @@
               <button class="button" id="load-project-button" type="button">Cargar</button>
               <button class="button button-danger" id="delete-project-button" type="button">Eliminar</button>
             </div>
+            <div class="saved-actions" role="group" aria-label="Copia de seguridad de la biblioteca">
+              <button class="button button-quiet" id="export-library-button" type="button">Exportar biblioteca</button>
+              <button class="button button-quiet" id="import-library-button" type="button">Importar biblioteca</button>
+              <input id="import-library-input" type="file" accept=".json,application/json" hidden>
+            </div>
           </section>
 
           <section class="saved-dialog-section" aria-labelledby="import-preset-title">
@@ -190,91 +303,185 @@
       </div>
     </dialog>
 
+    <dialog class="saved-dialog color-dialog" id="color-dialog" aria-labelledby="color-dialog-title" aria-describedby="color-dialog-description">
+      <div class="saved-dialog-frame">
+        <header class="dialog-header">
+          <div>
+            <p class="dialog-code">Cauce / Color</p>
+            <h2 id="color-dialog-title">Biblioteca de color</h2>
+            <p id="color-dialog-description">Guarda y reutiliza paleta y gradiente sin cargar otro proyecto.</p>
+          </div>
+          <button class="button button-quiet button-compact" id="close-color-dialog-button" type="button">Cerrar</button>
+        </header>
+        <div class="saved-dialog-content">
+          <section class="saved-dialog-section" aria-labelledby="save-color-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">01</span>
+              <div>
+                <h3 id="save-color-title">Guardar color actual</h3>
+                <p>Conserva los cuatro colores y la configuración compatible del gradiente.</p>
+              </div>
+            </div>
+            <div class="saved-color-preview" id="current-color-preview" aria-hidden="true"></div>
+            <label class="control-label" for="color-name-input">
+              <span>Nombre</span>
+              <input id="color-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Marea mineral">
+            </label>
+            <button class="button" id="save-color-button" type="button">Guardar paleta</button>
+          </section>
+          <section class="saved-dialog-section" aria-labelledby="saved-colors-title">
+            <div class="saved-dialog-heading">
+              <span class="export-index">02</span>
+              <div>
+                <h3 id="saved-colors-title">Colores guardados</h3>
+                <p>Persisten en la misma biblioteca local que los proyectos.</p>
+              </div>
+            </div>
+            <div class="saved-color-preview" id="selected-color-preview" aria-hidden="true"></div>
+            <label class="control-label" for="saved-color-select">
+              <span>Paletas</span>
+              <select id="saved-color-select"><option value="">Sin paletas guardadas</option></select>
+            </label>
+            <div class="saved-actions" role="group" aria-label="Acciones de colores guardados">
+              <button class="button" id="apply-color-button" type="button">Aplicar</button>
+              <button class="button button-danger" id="delete-color-button" type="button">Eliminar</button>
+            </div>
+          </section>
+          <p class="inline-error saved-dialog-message" id="color-library-error" role="alert" hidden></p>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title" aria-describedby="export-dialog-description">
       <div class="export-dialog-frame">
         <header class="dialog-header">
           <div>
-            <p class="dialog-code">Cauce / Output</p>
             <h2 id="export-dialog-title">Exportar proyecto</h2>
             <p id="export-dialog-description">Genera el estado actual en el formato que necesites.</p>
           </div>
           <button class="button button-quiet button-compact" id="close-export-dialog-button" type="button">Cerrar</button>
         </header>
 
-        <div class="export-grid">
-          <section class="export-option" aria-labelledby="svg-export-title">
-            <div class="export-option-heading">
+        <div class="export-workspace">
+          <fieldset class="export-kind-list">
+            <legend class="sr-only">Tipo de exportación</legend>
+            <label class="export-kind-option">
               <span class="export-index">01</span>
-              <div>
+              <span class="export-kind-copy"><strong>SVG</strong><small>Fotograma vectorial</small></span>
+              <input class="export-kind-input" type="radio" name="export-kind" value="svg" aria-controls="export-panel-svg">
+            </label>
+            <label class="export-kind-option">
+              <span class="export-index">02</span>
+              <span class="export-kind-copy"><strong>Vídeo</strong><small>Edición y alpha</small></span>
+              <input class="export-kind-input" type="radio" name="export-kind" value="video" aria-controls="export-panel-video" checked>
+            </label>
+            <label class="export-kind-option">
+              <span class="export-index">03</span>
+              <span class="export-kind-copy"><strong>Web</strong><small>Componente embebible</small></span>
+              <input class="export-kind-input" type="radio" name="export-kind" value="web" aria-controls="export-panel-web">
+            </label>
+            <label class="export-kind-option">
+              <span class="export-index">04</span>
+              <span class="export-kind-copy"><strong>Preset</strong><small>Estado compartible</small></span>
+              <input class="export-kind-input" type="radio" name="export-kind" value="preset" aria-controls="export-panel-preset">
+            </label>
+          </fieldset>
+
+          <div class="export-panels">
+            <section class="export-option" id="export-panel-svg" data-export-panel="svg" aria-labelledby="svg-export-title" hidden>
+              <header class="export-panel-heading">
+                <p class="dialog-code">Output / 01</p>
                 <h3 id="svg-export-title">SVG</h3>
                 <p>Fotograma vectorial editable del instante actual.</p>
+              </header>
+              <div class="export-panel-content">
+                <p class="export-detail">Mantiene paths, encuadre y color sólido o gradiente en el formato seleccionado.</p>
               </div>
-            </div>
-            <button class="button" id="export-button" type="button">Descargar SVG</button>
-            <p class="export-note" id="svg-export-status" role="status" aria-live="polite">Exporta el formato y la posición actuales.</p>
-          </section>
+              <footer class="export-panel-footer">
+                <button class="button" id="export-button" type="button">Descargar SVG</button>
+                <p class="export-note" id="svg-export-status" role="status" aria-live="polite">Exporta el formato y la posición actuales.</p>
+              </footer>
+            </section>
 
-          <section class="export-option" aria-labelledby="video-section-title">
-            <div class="export-option-heading">
-              <span class="export-index">02</span>
-              <div>
-                <h3 id="video-section-title">Vídeo alpha</h3>
-                <p>WebM VP9 transparente con la duración actual.</p>
+            <section class="export-option" id="export-panel-video" data-export-panel="video" aria-labelledby="video-section-title">
+              <header class="export-panel-heading">
+                <p class="dialog-code">Output / 02</p>
+                <h3 id="video-section-title">Vídeo</h3>
+                <p>Perfiles optimizados para edición, web y composición.</p>
+              </header>
+              <div class="export-panel-content">
+                <div class="video-settings">
+                  <label class="control-label" for="video-profile-select">
+                    <span>Perfil</span>
+                    <select id="video-profile-select">
+                      <option value="mov-alpha-capcut" selected>MOV alpha · CapCut</option>
+                      <option value="mp4-background">MP4 · Fondo actual</option>
+                      <option value="webm-alpha">WebM alpha · Web</option>
+                      <option value="mp4-chroma">MP4 · Croma verde</option>
+                    </select>
+                  </label>
+                  <label class="control-label" for="video-fps-select">
+                    <span>FPS</span>
+                    <select id="video-fps-select">
+                      <option value="20">20</option>
+                      <option value="24">24</option>
+                      <option value="30" selected>30</option>
+                      <option value="60">60</option>
+                    </select>
+                  </label>
+                </div>
               </div>
-            </div>
-            <label class="control-label" for="video-fps-select">
-              <span>Fotogramas por segundo</span>
-              <select id="video-fps-select">
-                <option value="20">20 fps</option>
-                <option value="24">24 fps</option>
-                <option value="30" selected>30 fps</option>
-                <option value="60">60 fps</option>
-              </select>
-            </label>
-            <div class="video-actions" role="group" aria-label="Exportación de vídeo transparente">
-              <button class="button" id="export-alpha-video-button" type="button">Descargar WebM alpha</button>
-              <button class="button button-quiet" id="cancel-alpha-video-button" type="button" disabled>Cancelar</button>
-            </div>
-            <progress id="video-export-progress" max="1" value="0" hidden>0%</progress>
-            <p class="export-note" id="video-export-status" role="status" aria-live="polite">El navegador verificará soporte VP9 alpha antes de exportar.</p>
-          </section>
+              <footer class="export-panel-footer">
+                <div class="video-actions" role="group" aria-label="Exportación de vídeo">
+                  <button class="button" id="export-video-button" type="button">Exportar vídeo</button>
+                  <button class="button button-quiet" id="cancel-video-button" type="button" disabled>Cancelar</button>
+                </div>
+                <progress id="video-export-progress" max="1" value="0" hidden>0%</progress>
+                <p class="export-note" id="video-export-status" role="status" aria-live="polite">ProRes 4444 conserva el canal alpha para importarlo en CapCut.</p>
+              </footer>
+            </section>
 
-          <section class="export-option" aria-labelledby="web-section-title">
-            <div class="export-option-heading">
-              <span class="export-index">03</span>
-              <div>
+            <section class="export-option" id="export-panel-web" data-export-panel="web" aria-labelledby="web-section-title" hidden>
+              <header class="export-panel-heading">
+                <p class="dialog-code">Output / 03</p>
                 <h3 id="web-section-title">Web embed</h3>
                 <p>Web Component, JSON, ejemplo HTML y documentación.</p>
+              </header>
+              <div class="export-panel-content">
+                <label class="control-label" for="web-background-select">
+                  <span>Superficie</span>
+                  <select id="web-background-select">
+                    <option value="transparent" selected>Transparente</option>
+                    <option value="color">Incluir color de fondo</option>
+                  </select>
+                </label>
               </div>
-            </div>
-            <label class="control-label" for="web-background-select">
-              <span>Superficie</span>
-              <select id="web-background-select">
-                <option value="transparent" selected>Transparente</option>
-                <option value="color">Incluir color de fondo</option>
-              </select>
-            </label>
-            <button class="button" id="export-web-button" type="button">Descargar paquete web</button>
-            <p class="inline-error" id="web-export-error" role="alert" hidden></p>
-            <p class="export-note" id="web-export-status" role="status" aria-live="polite">ZIP autónomo y sin dependencias.</p>
-          </section>
+              <footer class="export-panel-footer">
+                <button class="button" id="export-web-button" type="button">Descargar paquete web</button>
+                <p class="inline-error" id="web-export-error" role="alert" hidden></p>
+                <p class="export-note" id="web-export-status" role="status" aria-live="polite">ZIP autónomo y sin dependencias.</p>
+              </footer>
+            </section>
 
-          <section class="export-option" aria-labelledby="preset-export-title">
-            <div class="export-option-heading">
-              <span class="export-index">04</span>
-              <div>
+            <section class="export-option" id="export-panel-preset" data-export-panel="preset" aria-labelledby="preset-export-title" hidden>
+              <header class="export-panel-heading">
+                <p class="dialog-code">Output / 04</p>
                 <h3 id="preset-export-title">Preset compartible</h3>
                 <p>Estado completo para abrirlo en otra instalación de Cauce.</p>
+              </header>
+              <div class="export-panel-content">
+                <label class="control-label" for="preset-export-name">
+                  <span>Nombre</span>
+                  <input id="preset-export-name" type="text" maxlength="80" autocomplete="off">
+                </label>
               </div>
-            </div>
-            <label class="control-label" for="preset-export-name">
-              <span>Nombre</span>
-              <input id="preset-export-name" type="text" maxlength="80" autocomplete="off">
-            </label>
-            <button class="button" id="export-preset-button" type="button">Descargar .cauce.json</button>
-            <p class="inline-error" id="preset-export-error" role="alert" hidden></p>
-            <p class="export-note" id="preset-export-status" role="status" aria-live="polite">Incluye proyecto, formato, paleta, tiempo y parámetros.</p>
-          </section>
+              <footer class="export-panel-footer">
+                <button class="button" id="export-preset-button" type="button">Descargar .cauce.json</button>
+                <p class="inline-error" id="preset-export-error" role="alert" hidden></p>
+                <p class="export-note" id="preset-export-status" role="status" aria-live="polite">Incluye proyecto, formato, paleta, tiempo y parámetros.</p>
+              </footer>
+            </section>
+          </div>
         </div>
       </div>
     </dialog>
@@ -287,6 +494,17 @@
         <div class="dialog-actions">
           <button class="button button-quiet" value="cancel">Cancelar</button>
           <button class="button button-danger" id="confirm-delete-project-button" value="confirm">Eliminar</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="alert-dialog" id="delete-color-dialog" aria-labelledby="delete-color-title" aria-describedby="delete-color-description">
+      <form method="dialog">
+        <p class="dialog-code">Cauce / Acción destructiva</p>
+        <h2 id="delete-color-title">Eliminar paleta</h2>
+        <p id="delete-color-description">La paleta seleccionada desaparecerá de la biblioteca persistente. Los proyectos que ya usen esos colores no cambiarán.</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel">Cancelar</button>
+          <button class="button button-danger" id="confirm-delete-color-button" value="confirm">Eliminar</button>
         </div>
       </form>
     </dialog>

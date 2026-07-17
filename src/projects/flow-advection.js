@@ -1,4 +1,14 @@
-import { TAU, clamp, createRandom, parameter } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  canvasGradientStyle,
+  clamp,
+  createRandom,
+  gradientControlDefinitions,
+  parameter,
+  svgGradientDefinition
+} from "./shared.js";
+import { createFieldGrid, shortSideScale } from "./composition.js";
 
 function smoothstep(edge0, edge1, value) {
   const normalized = clamp((value - edge0) / Math.max(0.000001, edge1 - edge0), 0, 1);
@@ -117,35 +127,37 @@ function sampleMass(x, y, cycle, field, velocityX, velocityY, coverage, contrast
 }
 
 function createGeometry(frame) {
-  const columns = Math.round(parameter(frame, "density", 60));
-  const rows = Math.max(16, Math.round(columns * frame.height / frame.width));
+  const grid = createFieldGrid(frame, parameter(frame, "density", 60));
   const bend = parameter(frame, "bend", 1.2);
   const coverage = parameter(frame, "coverage", 0.85);
   const contrast = parameter(frame, "contrast", 1.35);
   const dashLength = parameter(frame, "length", 0.68);
-  const strokeWidth = parameter(frame, "stroke", 1.35) * frame.width / 760;
-  const cellWidth = frame.width / columns;
-  const cellHeight = frame.height / rows;
-  const baseLength = Math.min(cellWidth, cellHeight) * dashLength;
+  const strokeWidth = parameter(frame, "stroke", 1.35) * shortSideScale(frame);
+  const baseLength = grid.cellSize * dashLength;
   const cycle = frame.time * TAU;
   const field = createField(frame);
-  const values = new Float32Array(columns * rows * 5);
+  const values = new Float32Array(grid.columns * grid.rows * 5);
   let offset = 0;
 
-  for (let row = 0; row < rows; row += 1) {
-    const y = (row + 0.5) / rows;
-    const centerY = y * frame.height;
-
-    for (let column = 0; column < columns; column += 1) {
-      const x = (column + 0.5) / columns;
-      const centerX = x * frame.width;
-      const [velocityX, velocityY] = sampleFlow(x, y, cycle, field, bend);
+  for (let row = 0; row < grid.rows; row += 1) {
+    const screenY = (row + 0.5) * grid.cellHeight;
+    const worldY = grid.worldTop + (row + 0.5) * grid.worldCellHeight;
+    for (let column = 0; column < grid.columns; column += 1) {
+      const screenX = (column + 0.5) * grid.cellWidth;
+      const worldX = grid.worldLeft + (column + 0.5) * grid.worldCellWidth;
+      const [velocityX, velocityY] = sampleFlow(
+        worldX,
+        worldY,
+        cycle,
+        field,
+        bend
+      );
       const magnitude = Math.max(0.0001, Math.hypot(velocityX, velocityY));
       const directionX = velocityX / magnitude;
       const directionY = velocityY / magnitude;
       const energy = sampleMass(
-        x,
-        y,
+        worldX,
+        worldY,
         cycle,
         field,
         velocityX,
@@ -155,10 +167,10 @@ function createGeometry(frame) {
       );
       const halfLength = baseLength * (0.16 + energy * 0.84) * 0.5;
 
-      values[offset] = centerX - directionX * halfLength;
-      values[offset + 1] = centerY - directionY * halfLength;
-      values[offset + 2] = centerX + directionX * halfLength;
-      values[offset + 3] = centerY + directionY * halfLength;
+      values[offset] = screenX - directionX * halfLength;
+      values[offset + 1] = screenY - directionY * halfLength;
+      values[offset + 2] = screenX + directionX * halfLength;
+      values[offset + 3] = screenY + directionY * halfLength;
       values[offset + 4] = 0.018 + energy * 0.982;
       offset += 5;
     }
@@ -173,7 +185,7 @@ function render(context, frame) {
     context.fillStyle = frame.palette.background;
     context.fillRect(0, 0, frame.width, frame.height);
   }
-  context.strokeStyle = frame.palette.foreground;
+  context.strokeStyle = canvasGradientStyle(context, frame, appearanceParameters(frame));
   context.lineWidth = geometry.strokeWidth;
   context.lineCap = "round";
 
@@ -197,6 +209,11 @@ function render(context, frame) {
 
 function toSvg(frame) {
   const geometry = createGeometry(frame);
+  const gradient = svgGradientDefinition(
+    frame,
+    appearanceParameters(frame),
+    "vector-currents-gradient"
+  );
   const lines = [];
   for (let index = 0; index < geometry.values.length; index += 5) {
     lines.push(`<line x1="${geometry.values[index].toFixed(2)}" y1="${geometry.values[index + 1].toFixed(2)}" x2="${geometry.values[index + 2].toFixed(2)}" y2="${geometry.values[index + 3].toFixed(2)}" stroke-opacity="${geometry.values[index + 4].toFixed(3)}"/>`);
@@ -204,7 +221,7 @@ function toSvg(frame) {
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 02 — Vector Currents</title>${background}<g fill="none" stroke="${frame.palette.foreground}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round">${lines.join("")}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 02 — Vector Currents</title>${gradient.definition}${background}<g fill="none" stroke="${gradient.paint}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round">${lines.join("")}</g></svg>`;
 }
 
 export const flowAdvectionRenderer = {
@@ -219,7 +236,8 @@ export const flowAdvectionRenderer = {
     { key: "coverage", label: "Cobertura", min: 0, max: 1.8, step: 0.05, defaultValue: 0.85, digits: 2 },
     { key: "contrast", label: "Contraste", min: 0.55, max: 2.8, step: 0.05, defaultValue: 1.35, digits: 2 },
     { key: "length", label: "Longitud", min: 0.3, max: 1.2, step: 0.05, defaultValue: 0.68, digits: 2 },
-    { key: "stroke", label: "Trazo", min: 0.45, max: 2.4, step: 0.05, defaultValue: 1.35, digits: 2 }
+    ...gradientControlDefinitions(0, 0, 0.46),
+    { key: "stroke", label: "Trazo", min: 0.45, max: 2.4, step: 0.05, defaultValue: 1.35, digits: 2, group: "appearance" }
   ],
   defaults: {
     density: 60,
@@ -229,6 +247,9 @@ export const flowAdvectionRenderer = {
     coverage: 0.85,
     contrast: 1.35,
     length: 0.68,
+    gradientStrength: 0,
+    gradientAngle: 0,
+    gradientMidpoint: 0.46,
     stroke: 1.35
   },
   render,

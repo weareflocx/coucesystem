@@ -1,4 +1,14 @@
-import { TAU, clamp, createRandom, parameter } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  canvasGradientStyle,
+  clamp,
+  createRandom,
+  gradientControlDefinitions,
+  parameter,
+  svgGradientDefinition
+} from "./shared.js";
+import { createFieldGrid } from "./composition.js";
 
 const PROJECT_ID = "scalar-drift";
 
@@ -144,10 +154,7 @@ function sampleEnergy(x, y, cycle, field, settings) {
 }
 
 function createGeometry(frame) {
-  const columns = Math.round(parameter(frame, "density", 100));
-  const rows = Math.max(20, Math.round(columns * frame.height / frame.width));
-  const cellWidth = frame.width / columns;
-  const cellHeight = frame.height / rows;
+  const grid = createFieldGrid(frame, parameter(frame, "density", 100));
   const cycle = frame.time * TAU;
   const settings = {
     scale: parameter(frame, "scale", 1),
@@ -163,27 +170,25 @@ function createGeometry(frame) {
     parameter(frame, "maximumFill", 0.82)
   );
   const levels = Math.max(2, Math.round(parameter(frame, "levels", 4)));
-  const cellSize = Math.min(cellWidth, cellHeight);
   const field = createField(frame);
-  const values = new Float32Array(columns * rows * 3);
+  const values = new Float32Array(grid.columns * grid.rows * 3);
   let offset = 0;
 
-  for (let row = 0; row < rows; row += 1) {
-    const y = (row + 0.5) / rows;
-    const centerY = y * frame.height;
-
-    for (let column = 0; column < columns; column += 1) {
-      const x = (column + 0.5) / columns;
-      const centerX = x * frame.width;
-      const energy = sampleEnergy(x, y, cycle, field, settings);
+  for (let row = 0; row < grid.rows; row += 1) {
+    const screenY = (row + 0.5) * grid.cellHeight;
+    const worldY = grid.worldTop + (row + 0.5) * grid.worldCellHeight;
+    for (let column = 0; column < grid.columns; column += 1) {
+      const screenX = (column + 0.5) * grid.cellWidth;
+      const worldX = grid.worldLeft + (column + 0.5) * grid.worldCellWidth;
+      const energy = sampleEnergy(worldX, worldY, cycle, field, settings);
       const fillEnergy = Math.pow(energy, 2);
       const level = Math.round(fillEnergy * (levels - 1)) / (levels - 1);
-      const size = cellSize * (
+      const size = grid.cellSize * (
         minimumFill + level * (maximumFill - minimumFill)
       );
 
-      values[offset] = centerX - size * 0.5;
-      values[offset + 1] = centerY - size * 0.5;
+      values[offset] = screenX - size * 0.5;
+      values[offset + 1] = screenY - size * 0.5;
       values[offset + 2] = size;
       offset += 3;
     }
@@ -198,7 +203,7 @@ function render(context, frame) {
     context.fillStyle = frame.palette.background;
     context.fillRect(0, 0, frame.width, frame.height);
   }
-  context.fillStyle = frame.palette.foreground;
+  context.fillStyle = canvasGradientStyle(context, frame, appearanceParameters(frame));
   for (let index = 0; index < values.length; index += 3) {
     context.fillRect(
       values[index],
@@ -211,6 +216,7 @@ function render(context, frame) {
 
 function toSvg(frame) {
   const values = createGeometry(frame);
+  const gradient = svgGradientDefinition(frame, appearanceParameters(frame), "scalar-drift-gradient");
   const pixels = [];
   for (let index = 0; index < values.length; index += 3) {
     pixels.push(`<rect x="${values[index].toFixed(2)}" y="${values[index + 1].toFixed(2)}" width="${values[index + 2].toFixed(2)}" height="${values[index + 2].toFixed(2)}"/>`);
@@ -218,7 +224,7 @@ function toSvg(frame) {
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 03 — Scalar Drift</title>${background}<g fill="${frame.palette.foreground}">${pixels.join("")}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 03 — Scalar Drift</title>${gradient.definition}${background}<g fill="${gradient.paint}">${pixels.join("")}</g></svg>`;
 }
 
 export const scalarDriftProject = {
@@ -240,7 +246,8 @@ export const scalarDriftProject = {
     { key: "contrast", label: "Contraste", min: 0.65, max: 3, step: 0.05, defaultValue: 1.7, digits: 2 },
     { key: "minimumFill", label: "Relleno mínimo", min: 0.04, max: 0.35, step: 0.01, defaultValue: 0.16, digits: 2 },
     { key: "maximumFill", label: "Relleno máximo", min: 0.35, max: 0.96, step: 0.01, defaultValue: 0.82, digits: 2 },
-    { key: "levels", label: "Niveles de relleno", min: 2, max: 8, step: 1, defaultValue: 4, digits: 0 }
+    { key: "levels", label: "Niveles de relleno", min: 2, max: 8, step: 1, defaultValue: 4, digits: 0 },
+    ...gradientControlDefinitions(0, 0, 0.46)
   ],
   defaults: {
     density: 100,
@@ -252,7 +259,10 @@ export const scalarDriftProject = {
     contrast: 1.7,
     minimumFill: 0.16,
     maximumFill: 0.82,
-    levels: 4
+    levels: 4,
+    gradientStrength: 0,
+    gradientAngle: 0,
+    gradientMidpoint: 0.46
   },
   render,
   toSvg

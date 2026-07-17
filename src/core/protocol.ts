@@ -1,4 +1,4 @@
-import type { EngineState } from "./types";
+import type { EngineState, ImageField } from "./types";
 
 export type MainToWorkerMessage =
   | {
@@ -19,6 +19,10 @@ export type MainToWorkerMessage =
   | {
       type: "state";
       state: EngineState;
+    }
+  | {
+      type: "image-field";
+      field: ImageField | null;
     }
   | {
       type: "seek";

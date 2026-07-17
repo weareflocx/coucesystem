@@ -3,7 +3,13 @@
 import { getOutputFormat } from "./formats";
 import { clamp, positiveModulo } from "./random";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./protocol";
-import type { EngineState, ProjectDefinition, ProjectFrame, ProjectRenderer } from "./types";
+import type {
+  EngineState,
+  ImageField,
+  ProjectDefinition,
+  ProjectFrame,
+  ProjectRenderer
+} from "./types";
 import { getProject } from "../projects";
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
@@ -16,6 +22,7 @@ let projectRendererPromise: Promise<void> | null = null;
 let rendererProjectId = "";
 let rendererLoadToken = 0;
 let state: EngineState | null = null;
+let imageField: ImageField | null = null;
 let cssWidth = 1;
 let cssHeight = 1;
 let pixelRatio = 1;
@@ -102,7 +109,8 @@ function createProjectFrame(): ProjectFrame {
     seed: state.seed,
     palette: state.palette,
     view: state.view,
-    parameters: state.parameters
+    parameters: state.parameters,
+    imageField
   };
 }
 
@@ -251,6 +259,11 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
       }
       case "state": {
         state = message.state;
+        markDirty();
+        break;
+      }
+      case "image-field": {
+        imageField = message.field;
         markDirty();
         break;
       }

@@ -3,12 +3,12 @@ import {
   mobiusFlowProject,
   mobiusGradientGeometry,
   mobiusOpacityForBin,
-  mobiusTextureStroke
+  mobiusTextureStroke,
+  mobiusViewTransform
 } from "./mobius-flow.js";
 import {
   appearanceParameters,
-  mixHexColors,
-  paletteAccent
+  paletteGradientStops
 } from "./shared.js";
 
 const PROJECT_ID = "mobius-flow-vector";
@@ -62,17 +62,17 @@ async function createMobiusVectorRenderer(canvas) {
   const content = new Two.Group();
   const contentBackground = new Two.Rectangle(0, 0, 1, 1);
   contentBackground.noStroke();
-  content.add(contentBackground);
+  const artwork = new Two.Group();
+  artwork.strokeAttenuation = true;
+  content.add(contentBackground, artwork);
 
-  const stops = [
-    new Two.Stop(0, "#f4f3ee"),
-    new Two.Stop(0.5, "#aeb7ff"),
-    new Two.Stop(1, "#f4f3ee")
-  ];
+  const stops = Array.from({ length: 17 }, (_, index) => (
+    new Two.Stop(index / 16, "#f4f3ee")
+  ));
   const gradient = new Two.LinearGradient(0, 0, 1, 1, stops);
   const pathPairs = Array.from({ length: 12 }, () => ({
-    base: makePath(Two, content, gradient),
-    texture: makePath(Two, content, gradient)
+    base: makePath(Two, artwork, gradient),
+    texture: makePath(Two, artwork, gradient)
   }));
 
   two.scene.add(stageBackground, content);
@@ -88,6 +88,7 @@ async function createMobiusVectorRenderer(canvas) {
     stageBackground: null
   };
   let disposed = false;
+  let gradientTransformKey = "";
 
   function resize(nextViewport) {
     if (disposed) return;
@@ -106,11 +107,8 @@ async function createMobiusVectorRenderer(canvas) {
     const geometry = createMobiusGeometry(frame);
     const appearance = appearanceParameters(frame);
     const gradientVector = mobiusGradientGeometry(frame, appearance);
-    const accent = mixHexColors(
-      frame.palette.foreground,
-      paletteAccent(frame),
-      appearance.gradientStrength
-    );
+    const viewTransform = mobiusViewTransform(frame);
+    const ramp = paletteGradientStops(frame, appearance);
     const texture = mobiusTextureStroke(frame, appearance, geometry.strokeWidth);
     const hasTexture = texture.pattern.length > 0;
     const baseOpacity = hasTexture
@@ -127,17 +125,40 @@ async function createMobiusVectorRenderer(canvas) {
 
     content.translation.set(viewport.contentX, viewport.contentY);
     content.scale = viewport.contentWidth / Math.max(1, frame.width);
+    artwork.translation.set(viewTransform.translateX, viewTransform.translateY);
+    artwork.scale = viewTransform.zoom;
     contentBackground.visible = !frame.transparent;
     contentBackground.fill = frame.palette.background;
     contentBackground.translation.set(frame.width * 0.5, frame.height * 0.5);
     contentBackground.width = frame.width;
     contentBackground.height = frame.height;
 
-    gradient.left.set(gradientVector.x1, gradientVector.y1);
-    gradient.right.set(gradientVector.x2, gradientVector.y2);
-    stops[0].color = frame.palette.foreground;
-    stops[1].color = accent;
-    stops[2].color = frame.palette.foreground;
+    const nextGradientTransformKey = [
+      viewport.width,
+      viewport.height,
+      viewport.pixelRatio,
+      viewport.contentX,
+      viewport.contentY,
+      viewport.contentWidth,
+      viewport.contentHeight,
+      viewTransform.zoom,
+      viewTransform.translateX,
+      viewTransform.translateY
+    ].join(":");
+    if (nextGradientTransformKey !== gradientTransformKey) {
+      gradient.left = new Two.Vector(gradientVector.x1, gradientVector.y1);
+      gradient.right = new Two.Vector(gradientVector.x2, gradientVector.y2);
+      gradientTransformKey = nextGradientTransformKey;
+    } else {
+      gradient.left.set(gradientVector.x1, gradientVector.y1);
+      gradient.right.set(gradientVector.x2, gradientVector.y2);
+    }
+    for (let stopIndex = 0; stopIndex < stops.length; stopIndex += 1) {
+      const source = ramp[stopIndex];
+      stops[stopIndex].offset = source.offset;
+      stops[stopIndex].color = source.color;
+      stops[stopIndex].opacity = source.opacity;
+    }
 
     for (let bin = 0; bin < pathPairs.length; bin += 1) {
       const pair = pathPairs[bin];

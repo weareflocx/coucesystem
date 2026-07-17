@@ -48,8 +48,9 @@ El exportador web empaqueta automáticamente todos los módulos JavaScript de `s
 ## Determinismo
 
 - `frame.time` está normalizado entre `0` y `1`.
-- `frame.palette` incluye `background`, `foreground` y `accent`.
+- `frame.palette` incluye `background`, `foreground`, `accent` y el color final opcional `secondary`. Los presets antiguos sin `secondary` heredan `accent`.
 - `frame.view` es parte del estado determinista, no un ajuste local de la previsualización.
+- `frame.imageField`, cuando existe, contiene una matriz de luminancia temporal. Los proyectos deben convertirla en geometría; no incrustar el raster en el SVG.
 - `time = 0` y `time = 1` deben producir el mismo fotograma.
 - Toda aleatoriedad debe derivar de `frame.seed` mediante `createRandom`.
 - No usar `Math.random()`, `Date.now()` ni `performance.now()` dentro del renderer.
@@ -63,10 +64,24 @@ El exportador web empaqueta automáticamente todos los módulos JavaScript de `s
 
 La geometría debe escalar con el formato sin asignaciones ilimitadas. Los parámetros importados se normalizan contra `min` y `max` antes de llegar al motor.
 
+## Composición entre formatos
+
+Un cambio de formato no debe estirar el espacio matemático de la pieza. `composition.js` deriva un espacio común donde una unidad equivale siempre al eje corto del artboard:
+
+- Cuadrado conserva el dominio canónico `[0, 1] × [0, 1]`.
+- Horizontal revela más campo a izquierda y derecha.
+- Vertical revela más campo arriba y abajo.
+- `createFieldGrid()` mantiene celdas aproximadamente cuadradas y una densidad estable sobre el eje corto.
+- `shortSideScale()` mantiene trazos y detalles proporcionales sin ligarlos al ancho.
+
+Los proyectos de campo completo deben evaluar su fórmula en las coordenadas de mundo de esa composición y dibujar en las coordenadas de pantalla correspondientes. `01`, `02` y `03` siguen esta política.
+
+Los proyectos contenidos —órbitas, bandas o símbolos— usan `adaptiveAxisScale()` para responder suavemente a la orientación y `fitBoundsToArtboard()` para encajar su envolvente con margen seguro. El ajuste debe calcularse con límites estables para todo el bucle, nunca con los límites del fotograma actual: de lo contrario se cancela la respiración de la fórmula y aparece un zoom automático. `04` y `05` muestrean y almacenan la envolvente completa del bucle; `06` utiliza el dominio máximo estable de su campo.
+
 ## Validación
 
 ```bash
 npm run build
 ```
 
-Además, verificar SVG en varios puntos del bucle y comparar de forma exacta los resultados de `time = 0` y `time = 1`. Para renderers administrados se debe probar también el cambio de backend, la exportación WebM alpha y el ZIP servido por HTTP.
+Además, verificar SVG en vertical, cuadrado y horizontal, en varios puntos del bucle, y comparar de forma exacta los resultados de `time = 0` y `time = 1`. Para renderers administrados se debe probar también el cambio de backend, la exportación WebM alpha y el ZIP servido por HTTP.

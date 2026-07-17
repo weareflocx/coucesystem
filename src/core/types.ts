@@ -30,6 +30,7 @@ export interface Palette {
   background: string;
   foreground: string;
   accent: string;
+  secondary?: string;
 }
 
 export interface ViewState {
@@ -56,6 +57,12 @@ export interface EngineState {
   parameters: Record<string, number>;
 }
 
+export interface ImageField {
+  width: number;
+  height: number;
+  luminance: Uint8ClampedArray;
+}
+
 export interface RangeControlDefinition {
   key: string;
   label: string;
@@ -66,6 +73,7 @@ export interface RangeControlDefinition {
   digits?: number;
   suffix?: string;
   group?: string;
+  hidden?: boolean;
   options?: Array<{ value: number; label: string }>;
 }
 
@@ -78,6 +86,7 @@ export interface ProjectFrame {
   view: ViewState;
   parameters: Record<string, number>;
   transparent?: boolean;
+  imageField?: ImageField | null;
 }
 
 export interface ProjectDefinition {

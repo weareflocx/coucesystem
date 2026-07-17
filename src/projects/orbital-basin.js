@@ -1,22 +1,45 @@
-import { TAU, clamp, parameter } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  canvasGradientStyle,
+  clamp,
+  gradientControlDefinitions,
+  parameter,
+  svgGradientDefinition
+} from "./shared.js";
+import { adaptiveAxisScale, fitBoundsToArtboard } from "./composition.js";
 
 const PROJECT_ID = "orbital-basin";
+const LAYOUT_SAMPLES = 24;
+const layoutBoundsCache = new Map();
 
-function transformPoint(centerX, centerY, radius, rotation, x, y) {
+function transformPoint(rotation, x, y) {
   const cosine = Math.cos(rotation);
   const sine = Math.sin(rotation);
   return [
-    centerX + radius * (x * cosine - y * sine),
-    centerY + radius * (x * sine + y * cosine)
+    x * cosine - y * sine,
+    x * sine + y * cosine
   ];
 }
 
-function createGeometry(frame) {
+function emptyBounds() {
+  return {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY
+  };
+}
+
+function includeInBounds(bounds, x, y) {
+  bounds.minX = Math.min(bounds.minX, x);
+  bounds.minY = Math.min(bounds.minY, y);
+  bounds.maxX = Math.max(bounds.maxX, x);
+  bounds.maxY = Math.max(bounds.maxY, y);
+}
+
+function writeCycleGeometry(frame, cycle, formatScale, values, bounds) {
   const count = Math.round(parameter(frame, "rings", 24));
-  const cycle = frame.time * TAU;
-  const radius = Math.min(frame.width, frame.height) * 0.395;
-  const centerX = frame.width * 0.5;
-  const centerY = frame.height * 0.5;
   const pinch = parameter(frame, "pinch", 0.76);
   const breathing = parameter(frame, "breathing", 0.08);
   const breath = breathing * Math.sin(cycle);
@@ -28,7 +51,6 @@ function createGeometry(frame) {
   const skew = parameter(frame, "skew", 0) * Math.PI / 180;
   const tangentX = Math.sin(skew);
   const tangentY = Math.cos(skew);
-  const values = new Float32Array(count * 12);
   let offset = 0;
 
   for (let index = 0; index < count; index += 1) {
@@ -47,11 +69,61 @@ function createGeometry(frame) {
     ];
 
     for (const [x, y] of localPoints) {
-      const [screenX, screenY] = transformPoint(centerX, centerY, radius, rotation, x, y);
-      values[offset] = screenX;
-      values[offset + 1] = screenY;
+      const [rotatedX, rotatedY] = transformPoint(rotation, x, y);
+      const localX = rotatedX * formatScale.x;
+      const localY = rotatedY * formatScale.y;
+      if (values) {
+        values[offset] = localX;
+        values[offset + 1] = localY;
+      }
+      if (bounds) includeInBounds(bounds, localX, localY);
       offset += 2;
     }
+  }
+}
+
+function layoutCacheKey(frame) {
+  return [
+    frame.width,
+    frame.height,
+    parameter(frame, "rings", 24),
+    parameter(frame, "pinch", 0.76),
+    parameter(frame, "cavity", 0.3),
+    parameter(frame, "envelope", 1.52),
+    parameter(frame, "rotation", -47),
+    parameter(frame, "skew", 0),
+    parameter(frame, "circulation", 0.85),
+    parameter(frame, "breathing", 0.08),
+    parameter(frame, "precession", 2.5)
+  ].join(":");
+}
+
+function getLayoutBounds(frame, formatScale) {
+  const key = layoutCacheKey(frame);
+  const cached = layoutBoundsCache.get(key);
+  if (cached) return cached;
+
+  const bounds = emptyBounds();
+  for (let sample = 0; sample < LAYOUT_SAMPLES; sample += 1) {
+    writeCycleGeometry(frame, sample / LAYOUT_SAMPLES * TAU, formatScale, null, bounds);
+  }
+  if (layoutBoundsCache.size >= 48) {
+    layoutBoundsCache.delete(layoutBoundsCache.keys().next().value);
+  }
+  layoutBoundsCache.set(key, bounds);
+  return bounds;
+}
+
+function createGeometry(frame) {
+  const count = Math.round(parameter(frame, "rings", 24));
+  const formatScale = adaptiveAxisScale(frame, 0.32, 1.28);
+  const values = new Float32Array(count * 12);
+  writeCycleGeometry(frame, frame.time * TAU, formatScale, values, null);
+
+  const fit = fitBoundsToArtboard(frame, getLayoutBounds(frame, formatScale), 0.075);
+  for (let index = 0; index < values.length; index += 2) {
+    values[index] = values[index] * fit.scale + fit.offsetX;
+    values[index + 1] = values[index + 1] * fit.scale + fit.offsetY;
   }
 
   return {
@@ -66,7 +138,7 @@ function render(context, frame) {
     context.fillStyle = frame.palette.background;
     context.fillRect(0, 0, frame.width, frame.height);
   }
-  context.strokeStyle = frame.palette.foreground;
+  context.strokeStyle = canvasGradientStyle(context, frame, appearanceParameters(frame));
   context.lineWidth = geometry.strokeWidth;
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -101,6 +173,7 @@ function curveToPath(values, index) {
 
 function toSvg(frame) {
   const geometry = createGeometry(frame);
+  const gradient = svgGradientDefinition(frame, appearanceParameters(frame), "orbital-basin-gradient");
   const paths = [];
   for (let index = 0; index < geometry.values.length; index += 12) {
     paths.push(`<path d="${curveToPath(geometry.values, index)}"/>`);
@@ -108,7 +181,7 @@ function toSvg(frame) {
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 04 — Orbital Basin</title>${background}<g fill="none" stroke="${frame.palette.foreground}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${paths.join("")}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 04 — Orbital Basin</title>${gradient.definition}${background}<g fill="none" stroke="${gradient.paint}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${paths.join("")}</g></svg>`;
 }
 
 export const orbitalBasinProject = {
@@ -130,7 +203,8 @@ export const orbitalBasinProject = {
     { key: "circulation", label: "Circulación", min: 0, max: 1.8, step: 0.05, defaultValue: 0.85, digits: 2 },
     { key: "breathing", label: "Respiración", min: 0, max: 0.28, step: 0.01, defaultValue: 0.08, digits: 2 },
     { key: "precession", label: "Precesión", min: 0, max: 16, step: 0.5, defaultValue: 2.5, digits: 1, suffix: "°" },
-    { key: "stroke", label: "Trazo", min: 0.45, max: 20, step: 0.05, defaultValue: 1.25, digits: 2 }
+    ...gradientControlDefinitions(0, 0, 0.46),
+    { key: "stroke", label: "Trazo", min: 0.45, max: 20, step: 0.05, defaultValue: 1.25, digits: 2, group: "appearance" }
   ],
   defaults: {
     rings: 24,
@@ -142,6 +216,9 @@ export const orbitalBasinProject = {
     circulation: 0.85,
     breathing: 0.08,
     precession: 2.5,
+    gradientStrength: 0,
+    gradientAngle: 0,
+    gradientMidpoint: 0.46,
     stroke: 1.25
   },
   render,

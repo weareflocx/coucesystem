@@ -4,10 +4,11 @@ import {
   appearanceParameters,
   appearanceSample,
   clamp,
-  paletteAccent,
+  paletteGradientStops,
   parameter,
   positiveModulo
 } from "./shared.js";
+import { compositionMetrics } from "./composition.js";
 
 const PROJECT_ID = "mobius-flow-1-1";
 const SURFACE_SEGMENTS = 192;
@@ -56,10 +57,26 @@ function createSurfaceGeometry(THREE) {
   return geometry;
 }
 
-function writeAppearanceColor(target, offset, fromColor, toColor, backgroundColor, sample) {
-  const red = fromColor.r + (toColor.r - fromColor.r) * sample.gradientMix;
-  const green = fromColor.g + (toColor.g - fromColor.g) * sample.gradientMix;
-  const blue = fromColor.b + (toColor.b - fromColor.b) * sample.gradientMix;
+function writeAppearanceColor(
+  target,
+  offset,
+  gradientColors,
+  backgroundColor,
+  sample,
+  colorAmount = 1
+) {
+  const position = sample.gradientPosition * (gradientColors.length - 1);
+  const startIndex = Math.floor(position);
+  const endIndex = Math.min(gradientColors.length - 1, startIndex + 1);
+  const mix = position - startIndex;
+  const start = gradientColors[startIndex];
+  const end = gradientColors[endIndex];
+  const rampRed = start.r + (end.r - start.r) * mix;
+  const rampGreen = start.g + (end.g - start.g) * mix;
+  const rampBlue = start.b + (end.b - start.b) * mix;
+  const red = backgroundColor.r + (rampRed - backgroundColor.r) * colorAmount;
+  const green = backgroundColor.g + (rampGreen - backgroundColor.g) * colorAmount;
+  const blue = backgroundColor.b + (rampBlue - backgroundColor.b) * colorAmount;
   target[offset] = red + (backgroundColor.r - red) * sample.textureDim;
   target[offset + 1] = green + (backgroundColor.g - green) * sample.textureDim;
   target[offset + 2] = blue + (backgroundColor.b - blue) * sample.textureDim;
@@ -84,10 +101,10 @@ function updateSurfaceGeometry(geometry, frame, cycle, colors) {
       writeAppearanceColor(
         colorValues,
         offset,
-        colors.surfaceFrom,
-        colors.surfaceTo,
+        colors.gradient,
         colors.background,
-        sample
+        sample,
+        colors.surfaceTone
       );
       offset += 3;
     }
@@ -130,16 +147,14 @@ function updateCurrentGeometry(geometry, frame, surface, colors) {
       writeAppearanceColor(
         colorValues,
         offset,
-        colors.foreground,
-        colors.accent,
+        colors.gradient,
         colors.background,
         appearanceSample(frame, step / samples, colors.appearance)
       );
       writeAppearanceColor(
         colorValues,
         offset + 3,
-        colors.foreground,
-        colors.accent,
+        colors.gradient,
         colors.background,
         appearanceSample(frame, (step + 1) / samples, colors.appearance)
       );
@@ -213,10 +228,7 @@ async function createMobiusRenderer(canvas) {
   scene.add(hemisphereLight, keyLight, rimLight);
 
   const backgroundColor = new THREE.Color();
-  const foregroundColor = new THREE.Color();
-  const accentColor = new THREE.Color();
-  const surfaceFromColor = new THREE.Color();
-  const surfaceToColor = new THREE.Color();
+  const gradientColors = Array.from({ length: 17 }, () => new THREE.Color());
   const cameraTarget = new THREE.Vector3();
   let viewport = {
     width: 1,
@@ -244,18 +256,16 @@ async function createMobiusRenderer(canvas) {
     const appearance = appearanceParameters(frame);
 
     backgroundColor.set(frame.palette.background);
-    foregroundColor.set(frame.palette.foreground);
-    accentColor.set(paletteAccent(frame));
+    const ramp = paletteGradientStops(frame, appearance);
+    for (let index = 0; index < gradientColors.length; index += 1) {
+      gradientColors[index].set(ramp[index].color);
+    }
     const surfaceTone = parameter(frame, "surfaceTone", 0.36);
-    surfaceFromColor.copy(backgroundColor).lerp(foregroundColor, surfaceTone);
-    surfaceToColor.copy(backgroundColor).lerp(accentColor, surfaceTone);
     const colors = {
       appearance,
       background: backgroundColor,
-      foreground: foregroundColor,
-      accent: accentColor,
-      surfaceFrom: surfaceFromColor,
-      surfaceTo: surfaceToColor
+      gradient: gradientColors,
+      surfaceTone
     };
     const surface = updateSurfaceGeometry(surfaceGeometry, frame, cycle, colors);
     updateCurrentGeometry(currentGeometry, frame, surface, colors);
@@ -272,7 +282,11 @@ async function createMobiusRenderer(canvas) {
     const orbitYaw = (Number.isFinite(view.orbitYaw) ? view.orbitYaw : 0) * Math.PI / 180;
     const orbitPitch = (Number.isFinite(view.orbitPitch) ? view.orbitPitch : 0) * Math.PI / 180;
     const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
-    const distance = parameter(frame, "cameraDistance", 5.1) / zoom;
+    const formatAspect = compositionMetrics(frame).aspect;
+    const formatDistance = formatAspect < 1
+      ? Math.pow(1 / formatAspect, 0.22)
+      : Math.pow(formatAspect, -0.06);
+    const distance = parameter(frame, "cameraDistance", 5.1) * formatDistance / zoom;
     const cosinePitch = Math.cos(orbitPitch);
     cameraTarget.set(
       -(Number.isFinite(view.panX) ? view.panX : 0) * 3,
@@ -356,6 +370,7 @@ function toSvg(frame) {
       stroke: 1.1,
       gradientStrength: parameter(frame, "gradientStrength", 0.7),
       gradientAngle: parameter(frame, "gradientAngle", -35),
+      gradientMidpoint: parameter(frame, "gradientMidpoint", 0.46),
       textureMode: parameter(frame, "textureMode", 0),
       textureScale: parameter(frame, "textureScale", 4),
       textureStrength: parameter(frame, "textureStrength", 0),
@@ -392,8 +407,9 @@ export const mobiusFlow11Project = {
     { key: "surfaceTone", label: "Tono de superficie", min: 0.08, max: 0.9, step: 0.01, defaultValue: 0.36, digits: 2, group: "appearance" },
     { key: "roughness", label: "Rugosidad", min: 0.05, max: 1, step: 0.01, defaultValue: 0.72, digits: 2, group: "appearance" },
     { key: "light", label: "Luz", min: 0.2, max: 2.5, step: 0.05, defaultValue: 1.25, digits: 2, group: "appearance" },
-    { key: "gradientStrength", label: "Gradiente", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "appearance" },
-    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "appearance" },
+    { key: "gradientStrength", label: "Intensidad", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "gradient" },
+    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "gradient" },
+    { key: "gradientMidpoint", label: "Punto medio", min: 0.08, max: 0.92, step: 0.01, defaultValue: 0.46, digits: 2, group: "gradient" },
     { key: "textureMode", label: "Textura", min: 0, max: 2, step: 1, defaultValue: 0, digits: 0, group: "appearance", options: [
       { value: 0, label: "Lisa" },
       { value: 1, label: "Flujo" },
@@ -420,6 +436,7 @@ export const mobiusFlow11Project = {
     light: 1.25,
     gradientStrength: 0.7,
     gradientAngle: -35,
+    gradientMidpoint: 0.46,
     textureMode: 0,
     textureScale: 4,
     textureStrength: 0,

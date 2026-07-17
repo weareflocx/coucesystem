@@ -60,7 +60,10 @@ function normalizeConfig(value) {
       foreground: typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee",
       accent: typeof palette.accent === "string"
         ? palette.accent
-        : (typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee")
+        : (typeof palette.foreground === "string" ? palette.foreground : "#f4f3ee"),
+      secondary: typeof palette.secondary === "string"
+        ? palette.secondary
+        : (typeof palette.accent === "string" ? palette.accent : "#aeb7ff")
     },
     view: {
       zoom: clamp(finiteNumber(view.zoom, 1), 0.35, 4),

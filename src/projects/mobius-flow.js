@@ -1,16 +1,21 @@
 import {
   TAU,
   appearanceParameters,
+  canvasGradientStyle,
   clamp,
-  mixHexColors,
-  paletteAccent,
+  linearGradientGeometry,
   parameter,
-  positiveModulo
+  positiveModulo,
+  svgGradientDefinition
 } from "./shared.js";
+import { adaptiveAxisScale, fitBoundsToArtboard } from "./composition.js";
 
 const PROJECT_ID = "mobius-flow";
 const DEPTH_BINS = 12;
 const RADIAL_SAMPLES = 288;
+const LAYOUT_CYCLE_SAMPLES = 16;
+const LAYOUT_RADIAL_SAMPLES = 192;
+const layoutBoundsCache = new Map();
 
 function oddInteger(value, fallback) {
   const safeValue = Number.isFinite(value) ? value : fallback;
@@ -29,10 +34,7 @@ function createProjector(frame, stripWidth, cycle) {
   ) * Math.PI / 180;
   const rotation = parameter(frame, "rotation", -32) * Math.PI / 180;
   const perspective = parameter(frame, "perspective", 0.48);
-  const centerX = frame.width * (0.5 + (Number.isFinite(view.panX) ? view.panX : 0));
-  const centerY = frame.height * (0.5 + (Number.isFinite(view.panY) ? view.panY : 0));
-  const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
-  const scale = Math.min(frame.width, frame.height) * 0.31 * zoom;
+  const formatScale = adaptiveAxisScale(frame, 0.4, 1.32);
   const depthRange = 1 + stripWidth;
 
   const cosineTilt = Math.cos(tilt);
@@ -52,10 +54,24 @@ function createProjector(frame, stripWidth, cycle) {
     const projectedY = tiltedY * perspectiveScale;
 
     return [
-      centerX + scale * (projectedX * cosineRotation - projectedY * sineRotation),
-      centerY + scale * (projectedX * sineRotation + projectedY * cosineRotation),
+      (projectedX * cosineRotation - projectedY * sineRotation) * formatScale.x,
+      (projectedX * sineRotation + projectedY * cosineRotation) * formatScale.y,
       turnedZ
     ];
+  };
+}
+
+export function mobiusViewTransform(frame) {
+  const view = frame.view ?? {};
+  const centerX = frame.width * 0.5;
+  const centerY = frame.height * 0.5;
+  const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
+  const panX = frame.width * (Number.isFinite(view.panX) ? view.panX : 0);
+  const panY = frame.height * (Number.isFinite(view.panY) ? view.panY : 0);
+  return {
+    zoom,
+    translateX: centerX + panX - centerX * zoom,
+    translateY: centerY + panY - centerY * zoom
   };
 }
 
@@ -69,11 +85,89 @@ function sampleSurface(project, u, v, halfTwists, phase) {
   );
 }
 
-export function createMobiusGeometry(frame) {
-  const visibleCurrentCount = clamp(oddInteger(parameter(frame, "currents", 15), 15), 3, 35);
-  const sideCurrentCount = (visibleCurrentCount - 1) / 2;
+function mobiusLayoutCacheKey(frame) {
+  const view = frame.view ?? {};
+  return [
+    frame.width,
+    frame.height,
+    parameter(frame, "width", 0.46),
+    parameter(frame, "halfTwists", 1),
+    parameter(frame, "tilt", 58),
+    parameter(frame, "yaw", -16),
+    parameter(frame, "rotation", -32),
+    parameter(frame, "circulation", 1),
+    parameter(frame, "breathing", 0.07),
+    parameter(frame, "precession", 4),
+    parameter(frame, "perspective", 0.48),
+    Number.isFinite(view.orbitYaw) ? view.orbitYaw : 0,
+    Number.isFinite(view.orbitPitch) ? view.orbitPitch : 0
+  ].join(":");
+}
+
+function getMobiusLayoutBounds(frame) {
+  const key = mobiusLayoutCacheKey(frame);
+  const cached = layoutBoundsCache.get(key);
+  if (cached) return cached;
+
   const halfTwists = oddInteger(parameter(frame, "halfTwists", 1), 1);
-  const cycle = positiveModulo(frame.time, 1) * TAU;
+  const baseWidth = parameter(frame, "width", 0.46);
+  const breathing = parameter(frame, "breathing", 0.07);
+  const circulation = Math.round(parameter(frame, "circulation", 1));
+  const bounds = {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY
+  };
+
+  for (let cycleIndex = 0; cycleIndex < LAYOUT_CYCLE_SAMPLES; cycleIndex += 1) {
+    const cycle = cycleIndex / LAYOUT_CYCLE_SAMPLES * TAU;
+    const stripWidth = baseWidth * (1 + breathing * Math.sin(cycle));
+    const phase = circulation * cycle * 0.5;
+    const project = createProjector(frame, stripWidth, cycle);
+    const offsets = [0, stripWidth * 0.5, stripWidth];
+
+    for (const offset of offsets) {
+      const revolutions = offset === 0 ? 1 : 2;
+      const end = TAU * revolutions;
+      for (let step = 0; step <= LAYOUT_RADIAL_SAMPLES; step += 1) {
+        const point = sampleSurface(
+          project,
+          end * step / LAYOUT_RADIAL_SAMPLES,
+          offset,
+          halfTwists,
+          phase
+        );
+        bounds.minX = Math.min(bounds.minX, point[0]);
+        bounds.minY = Math.min(bounds.minY, point[1]);
+        bounds.maxX = Math.max(bounds.maxX, point[0]);
+        bounds.maxY = Math.max(bounds.maxY, point[1]);
+      }
+    }
+  }
+
+  const expansionX = (bounds.maxX - bounds.minX) * 0.012;
+  const expansionY = (bounds.maxY - bounds.minY) * 0.012;
+  bounds.minX -= expansionX;
+  bounds.maxX += expansionX;
+  bounds.minY -= expansionY;
+  bounds.maxY += expansionY;
+
+  if (layoutBoundsCache.size >= 48) {
+    layoutBoundsCache.delete(layoutBoundsCache.keys().next().value);
+  }
+  layoutBoundsCache.set(key, bounds);
+  return bounds;
+}
+
+export function mobiusLoopTime(frame) {
+  return positiveModulo(frame.time + parameter(frame, "loopPhase", 0), 1);
+}
+
+export function createMobiusGeometry(frame) {
+  const visibleCurrentCount = clamp(Math.round(parameter(frame, "currents", 15)), 3, 35);
+  const halfTwists = oddInteger(parameter(frame, "halfTwists", 1), 1);
+  const cycle = mobiusLoopTime(frame) * TAU;
   const breathing = parameter(frame, "breathing", 0.07);
   const stripWidth = parameter(frame, "width", 0.46) * (1 + breathing * Math.sin(cycle));
   const circulation = Math.round(parameter(frame, "circulation", 1));
@@ -100,9 +194,24 @@ export function createMobiusGeometry(frame) {
     }
   }
 
-  addCurrent(0, 1, RADIAL_SAMPLES / 2);
-  for (let index = 1; index <= sideCurrentCount; index += 1) {
-    addCurrent(stripWidth * index / sideCurrentCount, 2, RADIAL_SAMPLES);
+  const currentOffsets = mobiusCurrentOffsets(stripWidth, visibleCurrentCount);
+  for (const offset of currentOffsets) {
+    const isCenterCurrent = offset === 0;
+    addCurrent(
+      offset,
+      isCenterCurrent ? 1 : 2,
+      isCenterCurrent ? RADIAL_SAMPLES / 2 : RADIAL_SAMPLES
+    );
+  }
+
+  const fit = fitBoundsToArtboard(frame, getMobiusLayoutBounds(frame), 0.085);
+  for (const segments of bins) {
+    for (let index = 0; index < segments.length; index += 4) {
+      segments[index] = segments[index] * fit.scale + fit.offsetX;
+      segments[index + 1] = segments[index + 1] * fit.scale + fit.offsetY;
+      segments[index + 2] = segments[index + 2] * fit.scale + fit.offsetX;
+      segments[index + 3] = segments[index + 3] * fit.scale + fit.offsetY;
+    }
   }
 
   return {
@@ -112,37 +221,31 @@ export function createMobiusGeometry(frame) {
   };
 }
 
+export function mobiusCurrentOffsets(stripWidth, currentCount) {
+  const visibleCurrentCount = clamp(Math.round(currentCount), 3, 35);
+  const pairCount = Math.floor(visibleCurrentCount / 2);
+  const hasCenterCurrent = visibleCurrentCount % 2 === 1;
+  const offsets = hasCenterCurrent ? [0] : [];
+
+  for (let index = 1; index <= pairCount; index += 1) {
+    const crossSectionIndex = hasCenterCurrent ? index * 2 : index * 2 - 1;
+    offsets.push(stripWidth * crossSectionIndex / (visibleCurrentCount - 1));
+  }
+
+  return offsets;
+}
+
 export function mobiusOpacityForBin(bin, depthFade) {
   const depth = bin / (DEPTH_BINS - 1);
   return 1 - depthFade * (1 - depth) * 0.82;
 }
 
 export function mobiusGradientGeometry(frame, appearance) {
-  const centerX = frame.width * 0.5;
-  const centerY = frame.height * 0.5;
-  const radius = Math.hypot(frame.width, frame.height) * 0.5;
-  const directionX = Math.cos(appearance.gradientAngle);
-  const directionY = Math.sin(appearance.gradientAngle);
-  return {
-    x1: centerX - directionX * radius,
-    y1: centerY - directionY * radius,
-    x2: centerX + directionX * radius,
-    y2: centerY + directionY * radius
-  };
+  return linearGradientGeometry(frame, appearance.gradientAngle);
 }
 
 function createStrokeGradient(context, frame, appearance) {
-  const vector = mobiusGradientGeometry(frame, appearance);
-  const gradient = context.createLinearGradient(vector.x1, vector.y1, vector.x2, vector.y2);
-  const accent = mixHexColors(
-    frame.palette.foreground,
-    paletteAccent(frame),
-    appearance.gradientStrength
-  );
-  gradient.addColorStop(0, frame.palette.foreground);
-  gradient.addColorStop(0.5, accent);
-  gradient.addColorStop(1, frame.palette.foreground);
-  return gradient;
+  return canvasGradientStyle(context, frame, appearance);
 }
 
 export function mobiusTextureStroke(frame, appearance, strokeWidth) {
@@ -153,7 +256,7 @@ export function mobiusTextureStroke(frame, appearance, strokeWidth) {
   if (appearance.textureMode === 1) {
     return {
       pattern: [unit * 0.68, unit * 0.32],
-      offset: -positiveModulo(frame.time, 1) * appearance.textureMotion * unit
+      offset: -mobiusLoopTime(frame) * appearance.textureMotion * unit
     };
   }
   return {
@@ -184,6 +287,16 @@ function render(context, frame) {
     context.fillRect(0, 0, frame.width, frame.height);
   }
 
+  const viewTransform = mobiusViewTransform(frame);
+  context.save();
+  context.transform(
+    viewTransform.zoom,
+    0,
+    0,
+    viewTransform.zoom,
+    viewTransform.translateX,
+    viewTransform.translateY
+  );
   context.strokeStyle = createStrokeGradient(context, frame, appearance);
   context.lineWidth = geometry.strokeWidth;
   context.lineCap = "round";
@@ -202,6 +315,7 @@ function render(context, frame) {
   context.setLineDash([]);
   context.lineDashOffset = 0;
   context.globalAlpha = 1;
+  context.restore();
 }
 
 function segmentsToPath(segments) {
@@ -215,12 +329,8 @@ function segmentsToPath(segments) {
 function toSvg(frame) {
   const geometry = createMobiusGeometry(frame);
   const appearance = appearanceParameters(frame);
-  const vector = mobiusGradientGeometry(frame, appearance);
-  const accent = mixHexColors(
-    frame.palette.foreground,
-    paletteAccent(frame),
-    appearance.gradientStrength
-  );
+  const viewTransform = mobiusViewTransform(frame);
+  const gradient = svgGradientDefinition(frame, appearance, "mobius-flow-gradient");
   const texture = mobiusTextureStroke(frame, appearance, geometry.strokeWidth);
   const paths = geometry.bins.map((segments, bin) => {
     if (segments.length === 0) return "";
@@ -235,7 +345,8 @@ function toSvg(frame) {
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 05 — Möbius Flow</title><defs><linearGradient id="mobius-flow-gradient" gradientUnits="userSpaceOnUse" x1="${vector.x1.toFixed(2)}" y1="${vector.y1.toFixed(2)}" x2="${vector.x2.toFixed(2)}" y2="${vector.y2.toFixed(2)}"><stop offset="0" stop-color="${frame.palette.foreground}"/><stop offset="0.5" stop-color="${accent}"/><stop offset="1" stop-color="${frame.palette.foreground}"/></linearGradient></defs>${background}<g fill="none" stroke="url(#mobius-flow-gradient)" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round"><g opacity="${baseOpacity.toFixed(3)}">${paths.join("")}</g>${texturePaths}</g></svg>`;
+  const artworkTransform = `matrix(${viewTransform.zoom.toFixed(6)} 0 0 ${viewTransform.zoom.toFixed(6)} ${viewTransform.translateX.toFixed(3)} ${viewTransform.translateY.toFixed(3)})`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 05 — Möbius Flow</title>${gradient.definition}${background}<g transform="${artworkTransform}" fill="none" stroke="${gradient.paint}" stroke-width="${geometry.strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round"><g opacity="${baseOpacity.toFixed(3)}">${paths.join("")}</g>${texturePaths}</g></svg>`;
 }
 
 export const mobiusFlowProject = {
@@ -249,7 +360,8 @@ export const mobiusFlowProject = {
   preferredLoopSeconds: 7,
   viewControls: true,
   controls: [
-    { key: "currents", label: "Corrientes", min: 3, max: 35, step: 2, defaultValue: 15, digits: 0 },
+    { key: "loopPhase", label: "Inicio del bucle", min: 0, max: 0.999999, step: 0.001, defaultValue: 0, digits: 3, hidden: true },
+    { key: "currents", label: "Corrientes", min: 3, max: 35, step: 1, defaultValue: 15, digits: 0 },
     { key: "width", label: "Anchura de banda", min: 0.16, max: 0.72, step: 0.01, defaultValue: 0.46, digits: 2 },
     { key: "halfTwists", label: "Medias torsiones", min: 1, max: 5, step: 2, defaultValue: 1, digits: 0 },
     { key: "tilt", label: "Inclinación", min: -85, max: 85, step: 1, defaultValue: 58, digits: 0, suffix: "°" },
@@ -261,8 +373,9 @@ export const mobiusFlowProject = {
     { key: "perspective", label: "Perspectiva", min: 0, max: 0.9, step: 0.01, defaultValue: 0.48, digits: 2 },
     { key: "depthFade", label: "Profundidad", min: 0, max: 0.85, step: 0.01, defaultValue: 0.46, digits: 2, group: "appearance" },
     { key: "stroke", label: "Trazo", min: 0.45, max: 20, step: 0.05, defaultValue: 1.15, digits: 2, group: "appearance" },
-    { key: "gradientStrength", label: "Gradiente", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "appearance" },
-    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "appearance" },
+    { key: "gradientStrength", label: "Intensidad", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, group: "gradient" },
+    { key: "gradientAngle", label: "Dirección", min: -180, max: 180, step: 1, defaultValue: -35, digits: 0, suffix: "°", group: "gradient" },
+    { key: "gradientMidpoint", label: "Punto medio", min: 0.08, max: 0.92, step: 0.01, defaultValue: 0.46, digits: 2, group: "gradient" },
     { key: "textureMode", label: "Textura", min: 0, max: 2, step: 1, defaultValue: 0, digits: 0, group: "appearance", options: [
       { value: 0, label: "Lisa" },
       { value: 1, label: "Flujo" },
@@ -273,6 +386,7 @@ export const mobiusFlowProject = {
     { key: "textureMotion", label: "Movimiento de textura", min: -4, max: 4, step: 1, defaultValue: 1, digits: 0, group: "appearance" }
   ],
   defaults: {
+    loopPhase: 0,
     currents: 15,
     width: 0.46,
     halfTwists: 1,
@@ -287,6 +401,7 @@ export const mobiusFlowProject = {
     stroke: 1.15,
     gradientStrength: 0.7,
     gradientAngle: -35,
+    gradientMidpoint: 0.46,
     textureMode: 0,
     textureScale: 4,
     textureStrength: 0,

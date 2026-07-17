@@ -1,8 +1,54 @@
-import { TAU, clamp, createRandom, parameter } from "./shared.js";
+import {
+  TAU,
+  appearanceParameters,
+  canvasGradientStyle,
+  clamp,
+  createRandom,
+  gradientControlDefinitions,
+  parameter,
+  svgGradientDefinition
+} from "./shared.js";
+import { compositionMetrics, shortSideScale } from "./composition.js";
 
 const PROJECT_ID = "flow-compression";
 
-function createField(frame) {
+function eventOverlapsComposition(event, composition) {
+  const supportY = event.sy * 3.2;
+  if (
+    event.v + supportY < composition.worldTop ||
+    event.v - supportY > composition.worldTop + composition.worldHeight
+  ) return false;
+
+  const supportX = (
+    event.sx * 3.2 +
+    Math.abs(event.drift) +
+    Math.abs(event.tilt) * composition.worldHeight
+  );
+  return !(
+    event.u + supportX < composition.worldLeft ||
+    event.u - supportX > composition.worldLeft + composition.worldWidth
+  );
+}
+
+function extendEvents(events, composition) {
+  const xOffsets = composition.worldWidth > 1.0001 ? [-1, 0, 1] : [0];
+  const yOffsets = composition.worldHeight > 1.0001 ? [-1, 0, 1] : [0];
+  const extended = [];
+
+  for (const event of events) {
+    for (const offsetY of yOffsets) {
+      for (const offsetX of xOffsets) {
+        const shifted = offsetX === 0 && offsetY === 0
+          ? event
+          : { ...event, u: event.u + offsetX, v: event.v + offsetY };
+        if (eventOverlapsComposition(shifted, composition)) extended.push(shifted);
+      }
+    }
+  }
+  return extended;
+}
+
+function createField(frame, composition) {
   const random = createRandom(frame.seed);
   const phases = Array.from({ length: 8 }, () => random() * TAU);
   const eventCount = Math.round(parameter(frame, "focus", 11));
@@ -32,7 +78,7 @@ function createField(frame) {
     });
   }
 
-  return { phases, events };
+  return { phases, events: extendEvents(events, composition) };
 }
 
 function prepareEventsForRow(field, v, scaledV) {
@@ -69,26 +115,34 @@ function logGap(u, scaledV, frame, field, rowEvents) {
   return clamp(result, -4.4, 4.4);
 }
 
-function createGeometry(frame) {
-  const lineCount = Math.round(parameter(frame, "lines", 118));
+export function createCompressionGeometry(frame, includeDensity = false) {
+  const composition = compositionMetrics(frame);
+  const lineCount = Math.max(2, Math.round(
+    parameter(frame, "lines", 118) * composition.worldWidth
+  ));
   const verticalFrequency = parameter(frame, "frequency", 1);
-  const padding = 4 * frame.width / 760;
+  const padding = 4 * shortSideScale(frame);
   const span = frame.width - padding * 2;
-  const samples = Math.round(clamp(152 * frame.height / frame.width, 150, 260));
+  const samples = Math.round(clamp(152 * composition.worldHeight, 150, 260));
   const intervals = lineCount - 1;
   const lines = Array.from({ length: lineCount }, () => new Float32Array(samples * 2));
-  const field = createField(frame);
+  const densities = includeDensity
+    ? Array.from({ length: lineCount }, () => new Float32Array(samples))
+    : null;
+  const field = createField(frame, composition);
 
   for (let sample = 0; sample < samples; sample += 1) {
-    const v = sample / (samples - 1);
+    const normalizedV = sample / (samples - 1);
+    const v = composition.worldTop + normalizedV * composition.worldHeight;
     const scaledV = v * verticalFrequency;
-    const y = v * frame.height;
+    const y = normalizedV * frame.height;
     const rowEvents = prepareEventsForRow(field, v, scaledV);
     const gaps = new Float32Array(intervals);
     let total = 0;
 
     for (let index = 0; index < intervals; index += 1) {
-      const u = (index + 0.5) / intervals;
+      const u = composition.worldLeft +
+        (index + 0.5) / intervals * composition.worldWidth;
       const gap = Math.exp(logGap(u, scaledV, frame, field, rowEvents));
       gaps[index] = gap;
       total += gap;
@@ -104,9 +158,32 @@ function createGeometry(frame) {
       lines[lineIndex][pointIndex] = padding + span * cumulative / total;
       lines[lineIndex][pointIndex + 1] = y;
     }
+
+    if (densities) {
+      const referenceGap = span / intervals;
+      for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
+        const currentX = lines[lineIndex][pointIndex];
+        const leftGap = lineIndex > 0
+          ? currentX - lines[lineIndex - 1][pointIndex]
+          : null;
+        const rightGap = lineIndex < lineCount - 1
+          ? lines[lineIndex + 1][pointIndex] - currentX
+          : null;
+        const localGap = leftGap !== null && rightGap !== null
+          ? 2 * leftGap * rightGap / Math.max(0.0001, leftGap + rightGap)
+          : leftGap ?? rightGap ?? referenceGap;
+        densities[lineIndex][sample] = Math.log(
+          referenceGap / Math.max(0.0001, localGap)
+        );
+      }
+    }
   }
 
-  return lines;
+  return { lines, densities };
+}
+
+function createGeometry(frame) {
+  return createCompressionGeometry(frame).lines;
 }
 
 function render(context, frame) {
@@ -115,8 +192,8 @@ function render(context, frame) {
     context.fillStyle = frame.palette.background;
     context.fillRect(0, 0, frame.width, frame.height);
   }
-  context.strokeStyle = frame.palette.foreground;
-  context.lineWidth = parameter(frame, "stroke", 1.55) * frame.width / 760;
+  context.strokeStyle = canvasGradientStyle(context, frame, appearanceParameters(frame));
+  context.lineWidth = parameter(frame, "stroke", 1.55) * shortSideScale(frame);
   context.lineCap = "round";
   context.lineJoin = "round";
 
@@ -140,12 +217,17 @@ function lineToPath(line) {
 
 function toSvg(frame) {
   const lines = createGeometry(frame);
-  const stroke = parameter(frame, "stroke", 1.55) * frame.width / 760;
+  const gradient = svgGradientDefinition(
+    frame,
+    appearanceParameters(frame),
+    "compression-field-gradient"
+  );
+  const stroke = parameter(frame, "stroke", 1.55) * shortSideScale(frame);
   const paths = lines.map((line) => `<path d="${lineToPath(line)}"/>`).join("");
   const background = frame.transparent
     ? ""
     : `<rect width="${frame.width}" height="${frame.height}" fill="${frame.palette.background}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 01 — Compression Field</title>${background}<g fill="none" stroke="${frame.palette.foreground}" stroke-width="${stroke.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 01 — Compression Field</title>${gradient.definition}${background}<g fill="none" stroke="${gradient.paint}" stroke-width="${stroke.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
 }
 
 export const flowCompressionProject = {
@@ -162,7 +244,8 @@ export const flowCompressionProject = {
     { key: "flow", label: "Flujo", min: 0, max: 1.6, step: 0.05, defaultValue: 0.75, digits: 2 },
     { key: "frequency", label: "Frecuencia vertical", min: 0.45, max: 2, step: 0.05, defaultValue: 1, digits: 2 },
     { key: "motion", label: "Deriva del cauce", min: 0, max: 1.4, step: 0.05, defaultValue: 0.72, digits: 2 },
-    { key: "stroke", label: "Trazo", min: 0.45, max: 3.2, step: 0.05, defaultValue: 1.55, digits: 2 }
+    ...gradientControlDefinitions(0, 0, 0.46),
+    { key: "stroke", label: "Trazo", min: 0.45, max: 3.2, step: 0.05, defaultValue: 1.55, digits: 2, group: "appearance" }
   ],
   defaults: {
     lines: 118,
@@ -171,6 +254,9 @@ export const flowCompressionProject = {
     flow: 0.75,
     frequency: 1,
     motion: 0.72,
+    gradientStrength: 0,
+    gradientAngle: 0,
+    gradientMidpoint: 0.46,
     stroke: 1.55
   },
   render,

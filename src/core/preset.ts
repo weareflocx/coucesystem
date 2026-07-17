@@ -40,6 +40,7 @@ export function isEngineState(value: unknown): value is EngineState {
     typeof candidate.palette.background === "string" &&
     typeof candidate.palette.foreground === "string" &&
     (candidate.palette.accent === undefined || typeof candidate.palette.accent === "string") &&
+    (candidate.palette.secondary === undefined || typeof candidate.palette.secondary === "string") &&
     isCompatibleView(candidate.view) &&
     typeof candidate.playback === "object" &&
     candidate.playback !== null &&
