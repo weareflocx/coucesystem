@@ -1,12 +1,13 @@
 import { isEngineState } from "./preset";
-import type { EngineState, Palette } from "./types";
+import { appearanceFromLegacy, normalizeAppearance } from "./appearance";
+import type { AppearanceStyle, EngineState, Palette } from "./types";
 
 const STORAGE_KEY = "cauce-studio.projects.v2";
 const LEGACY_STORAGE_KEY = "cauce-studio.projects.v1";
 const COLOR_STORAGE_KEY = "cauce-studio.colors.v1";
 const TOMBSTONE_STORAGE_KEY = "cauce-studio.tombstones.v1";
 const SCHEMA_VERSION = 2;
-const COLOR_SCHEMA_VERSION = 1;
+const COLOR_SCHEMA_VERSION = 2;
 const LIBRARY_SCHEMA_VERSION = 1;
 
 export interface SavedProjectRecord {
@@ -16,6 +17,7 @@ export interface SavedProjectRecord {
   createdAt: string;
   updatedAt: string;
   time: number;
+  elapsedTime?: number;
   state: EngineState;
 }
 
@@ -26,6 +28,17 @@ export interface SavedColorGradient {
 }
 
 export interface SavedColorRecord {
+  schemaVersion: 2;
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  palette: Palette;
+  gradient: SavedColorGradient;
+  appearance: AppearanceStyle;
+}
+
+interface LegacySavedColorRecord {
   schemaVersion: 1;
   id: string;
   name: string;
@@ -91,12 +104,12 @@ export function isLibraryStorageKey(key: string | null): boolean {
 
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
-function isSavedColor(value: unknown): value is SavedColorRecord {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<SavedColorRecord>;
+function normalizeSavedColor(value: unknown): SavedColorRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SavedColorRecord | LegacySavedColorRecord>;
   const palette = candidate.palette;
   const gradient = candidate.gradient;
-  return candidate.schemaVersion === COLOR_SCHEMA_VERSION &&
+  const compatible = (candidate.schemaVersion === 1 || candidate.schemaVersion === COLOR_SCHEMA_VERSION) &&
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&
     typeof candidate.createdAt === "string" &&
@@ -110,6 +123,38 @@ function isSavedColor(value: unknown): value is SavedColorRecord {
     Number.isFinite(gradient!.strength) &&
     Number.isFinite(gradient!.angle) &&
     Number.isFinite(gradient!.midpoint);
+  if (!compatible || !palette || !gradient) return null;
+  const normalizedPalette: Palette = {
+    background: palette.background.toLowerCase(),
+    foreground: palette.foreground.toLowerCase(),
+    accent: palette.accent.toLowerCase(),
+    secondary: (palette.secondary ?? palette.accent).toLowerCase()
+  };
+  const normalizedGradient = {
+    strength: Math.max(0, Math.min(1, gradient.strength)),
+    angle: Math.max(-180, Math.min(180, gradient.angle)),
+    midpoint: Math.max(0.08, Math.min(0.92, gradient.midpoint))
+  };
+  return {
+    schemaVersion: COLOR_SCHEMA_VERSION,
+    id: candidate.id!,
+    name: candidate.name!,
+    createdAt: candidate.createdAt!,
+    updatedAt: candidate.updatedAt!,
+    palette: normalizedPalette,
+    gradient: normalizedGradient,
+    appearance: normalizeAppearance(
+      candidate.schemaVersion === COLOR_SCHEMA_VERSION
+        ? (candidate as Partial<SavedColorRecord>).appearance
+        : undefined,
+      normalizedPalette,
+      {
+        gradientStrength: normalizedGradient.strength,
+        gradientAngle: normalizedGradient.angle,
+        gradientMidpoint: normalizedGradient.midpoint
+      }
+    )
+  };
 }
 
 function isSavedLibraryTombstone(value: unknown): value is SavedLibraryTombstone {
@@ -123,21 +168,6 @@ function isSavedLibraryTombstone(value: unknown): value is SavedLibraryTombstone
     candidate.deletedAt.length > 0;
 }
 
-function normalizeSavedColor(record: SavedColorRecord): SavedColorRecord {
-  return {
-    ...record,
-    palette: {
-      ...record.palette,
-      secondary: record.palette.secondary ?? record.palette.accent
-    },
-    gradient: {
-      strength: Math.max(0, Math.min(1, record.gradient.strength)),
-      angle: Math.max(-180, Math.min(180, record.gradient.angle)),
-      midpoint: Math.max(0.08, Math.min(0.92, record.gradient.midpoint))
-    }
-  };
-}
-
 function hasRecordFields(value: unknown): value is Omit<SavedProjectRecord, "schemaVersion"> {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<SavedProjectRecord>;
@@ -148,6 +178,9 @@ function hasRecordFields(value: unknown): value is Omit<SavedProjectRecord, "sch
     typeof candidate.updatedAt === "string" &&
     typeof candidate.time === "number" &&
     Number.isFinite(candidate.time) &&
+    (candidate.elapsedTime === undefined || (
+      typeof candidate.elapsedTime === "number" && Number.isFinite(candidate.elapsedTime)
+    )) &&
     isEngineState(candidate.state)
   );
 }
@@ -170,9 +203,22 @@ function isLegacySavedProject(value: unknown): value is LegacySavedProjectRecord
   );
 }
 
+function migrateRemovedProject(record: SavedProjectRecord): SavedProjectRecord {
+  if (record.state.projectId !== "mobius-flow-vector") return record;
+  return {
+    ...record,
+    state: {
+      ...record.state,
+      projectId: "mobius-flow"
+    }
+  };
+}
+
 function normalizeStoredProject(value: unknown): SavedProjectRecord | null {
-  if (isSavedProject(value)) return value;
-  if (isLegacySavedProject(value)) return { ...value, schemaVersion: 2 };
+  if (isSavedProject(value)) return migrateRemovedProject(value);
+  if (isLegacySavedProject(value)) {
+    return migrateRemovedProject({ ...value, schemaVersion: 2 });
+  }
   return null;
 }
 
@@ -200,8 +246,8 @@ function writeTombstones(tombstones: SavedLibraryTombstone[]): void {
 
 function readColorRecords(): SavedColorRecord[] {
   return parseArray(window.localStorage.getItem(COLOR_STORAGE_KEY))
-    .filter(isSavedColor)
-    .map(normalizeSavedColor);
+    .map(normalizeSavedColor)
+    .filter((record): record is SavedColorRecord => record !== null);
 }
 
 function readTombstones(): SavedLibraryTombstone[] {
@@ -303,8 +349,12 @@ function parseLibraryBackup(source: string): SavedLibraryBackup {
     throw new Error("La copia contiene uno o más proyectos incompletos.");
   }
   const colors = candidate.colors ?? [];
-  if (!Array.isArray(colors) || !colors.every(isSavedColor)) {
-    throw new Error("La copia contiene una o más paletas incompletas.");
+  if (!Array.isArray(colors)) {
+    throw new Error("La copia contiene una o más apariencias incompletas.");
+  }
+  const normalizedColors = colors.map(normalizeSavedColor);
+  if (normalizedColors.some((record) => record === null)) {
+    throw new Error("La copia contiene una o más apariencias incompletas.");
   }
   const tombstones = candidate.tombstones ?? [];
   if (!Array.isArray(tombstones) || !tombstones.every(isSavedLibraryTombstone)) {
@@ -316,8 +366,8 @@ function parseLibraryBackup(source: string): SavedLibraryBackup {
     createdAt: typeof candidate.createdAt === "string"
       ? candidate.createdAt
       : new Date().toISOString(),
-    records: structuredClone(candidate.records),
-    colors: colors.map((record) => structuredClone(normalizeSavedColor(record))),
+    records: candidate.records.map((record) => structuredClone(migrateRemovedProject(record))),
+    colors: normalizedColors.map((record) => structuredClone(record!)),
     tombstones: structuredClone(tombstones)
   };
 }
@@ -335,7 +385,12 @@ export function listSavedColors(): SavedColorRecord[] {
 export function saveColor(
   name: string,
   palette: Palette,
-  gradient: SavedColorGradient
+  gradient: SavedColorGradient,
+  appearance: AppearanceStyle = appearanceFromLegacy(palette, {
+    gradientStrength: gradient.strength,
+    gradientAngle: gradient.angle,
+    gradientMidpoint: gradient.midpoint
+  })
 ): SavedColorRecord {
   const now = new Date().toISOString();
   const record = normalizeSavedColor({
@@ -345,8 +400,10 @@ export function saveColor(
     createdAt: now,
     updatedAt: now,
     palette: structuredClone(palette),
-    gradient: structuredClone(gradient)
+    gradient: structuredClone(gradient),
+    appearance: structuredClone(appearance)
   });
+  if (!record) throw new Error("No se pudo normalizar la apariencia.");
   writeColorRecords([...readColorRecords(), record]);
   return record;
 }
@@ -357,7 +414,12 @@ export function deleteColor(colorId: string): void {
   writeColorRecords(records.filter((record) => record.id !== colorId));
 }
 
-export function saveProject(name: string, state: EngineState, time: number): SavedProjectRecord {
+export function saveProject(
+  name: string,
+  state: EngineState,
+  time: number,
+  elapsedTime = time * state.playback.loopSeconds
+): SavedProjectRecord {
   const now = new Date().toISOString();
   const record: SavedProjectRecord = {
     schemaVersion: SCHEMA_VERSION,
@@ -366,6 +428,7 @@ export function saveProject(name: string, state: EngineState, time: number): Sav
     createdAt: now,
     updatedAt: now,
     time,
+    elapsedTime,
     state: structuredClone(state)
   };
   const records = readRecords();

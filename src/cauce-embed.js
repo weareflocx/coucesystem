@@ -17,11 +17,104 @@ export function renderCauceProject(projectId, context, frame) {
 export function cauceProjectToSvg(projectId, frame) {
   const project = CAUCE_RENDERERS[projectId];
   if (!project) throw new Error(`Proyecto Cauce desconocido: ${projectId}.`);
+  if (!project.toSvg || project.exportCapabilities?.svg === false) {
+    throw new Error(`${project.index} · ${project.name} no ofrece exportación SVG.`);
+  }
   return project.toSvg(frame);
 }
 
 function finiteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeLighting(value, fallback, legacyParameters = {}) {
+  if (!fallback) return null;
+  const source = value && typeof value === "object" ? value : fallback;
+  const environment = source.environment && typeof source.environment === "object"
+    ? source.environment
+    : fallback.environment;
+  const ambient = source.ambient && typeof source.ambient === "object"
+    ? source.ambient
+    : fallback.ambient;
+  const fallbackLight = fallback.lights[0];
+  const usesLegacyLight = !(value && typeof value === "object" && Array.isArray(value.lights));
+  const sourceLights = usesLegacyLight
+    ? [{
+        ...fallbackLight,
+        position: {
+          x: finiteNumber(legacyParameters.lightX, fallbackLight.position.x),
+          y: finiteNumber(legacyParameters.lightY, fallbackLight.position.y),
+          z: finiteNumber(legacyParameters.lightZ, fallbackLight.position.z)
+        },
+        target: {
+          x: finiteNumber(legacyParameters.lightTargetX, fallbackLight.target.x),
+          y: finiteNumber(legacyParameters.lightTargetY, fallbackLight.target.y),
+          z: finiteNumber(legacyParameters.lightTargetZ, fallbackLight.target.z)
+        },
+        intensity: finiteNumber(legacyParameters.lightIntensity, fallbackLight.intensity),
+        angle: finiteNumber(legacyParameters.lightAngle, fallbackLight.angle),
+        penumbra: finiteNumber(legacyParameters.lightPenumbra, fallbackLight.penumbra),
+        castShadow: finiteNumber(legacyParameters.lightShadows, fallbackLight.castShadow ? 1 : 0) >= 0.5
+      }]
+    : value.lights.slice(0, 6);
+  const allowedTypes = new Set(["spot", "point", "directional", "rect-area"]);
+  const allowedSources = new Set(["custom", "foreground", "accent", "secondary"]);
+  const normalizeVector = (candidate, defaultVector, minimum, maximum) => ({
+    x: clamp(finiteNumber(candidate?.x, defaultVector.x), minimum, maximum),
+    y: clamp(finiteNumber(candidate?.y, defaultVector.y), minimum, maximum),
+    z: clamp(finiteNumber(candidate?.z, defaultVector.z), minimum, maximum)
+  });
+  const lights = sourceLights.map((candidate, index) => {
+    const defaultLight = fallback.lights[index] ?? {
+      ...fallbackLight,
+      id: `light-${index + 1}`,
+      name: `Luz ${index + 1}`,
+      castShadow: false
+    };
+    return {
+      id: typeof candidate?.id === "string" && candidate.id ? candidate.id.slice(0, 80) : defaultLight.id,
+      name: typeof candidate?.name === "string" && candidate.name ? candidate.name.slice(0, 48) : defaultLight.name,
+      type: allowedTypes.has(candidate?.type) ? candidate.type : defaultLight.type,
+      enabled: typeof candidate?.enabled === "boolean" ? candidate.enabled : defaultLight.enabled,
+      solo: typeof candidate?.solo === "boolean" ? candidate.solo : false,
+      colorSource: allowedSources.has(candidate?.colorSource) ? candidate.colorSource : defaultLight.colorSource,
+      color: typeof candidate?.color === "string" ? candidate.color : defaultLight.color,
+      intensity: clamp(finiteNumber(candidate?.intensity, defaultLight.intensity), 0, 24),
+      position: normalizeVector(candidate?.position, defaultLight.position, -4, 4),
+      target: normalizeVector(candidate?.target, defaultLight.target, -3, 3),
+      distance: clamp(finiteNumber(candidate?.distance, defaultLight.distance), 0.1, 30),
+      angle: clamp(finiteNumber(candidate?.angle, defaultLight.angle), 5, 89),
+      penumbra: clamp(finiteNumber(candidate?.penumbra, defaultLight.penumbra), 0, 1),
+      width: clamp(finiteNumber(candidate?.width, defaultLight.width), 0.1, 8),
+      height: clamp(finiteNumber(candidate?.height, defaultLight.height), 0.1, 8),
+      castShadow: typeof candidate?.castShadow === "boolean" ? candidate.castShadow : defaultLight.castShadow,
+      shadowMapSize: [256, 512, 1024].includes(candidate?.shadowMapSize)
+        ? candidate.shadowMapSize
+        : defaultLight.shadowMapSize
+    };
+  });
+  const ambientType = ["none", "ambient", "hemisphere"].includes(ambient.type)
+    ? ambient.type
+    : fallback.ambient.type;
+  return {
+    environment: {
+      enabled: typeof environment.enabled === "boolean" ? environment.enabled : fallback.environment.enabled,
+      intensity: clamp(finiteNumber(environment.intensity, fallback.environment.intensity), 0, 3),
+      rotation: clamp(finiteNumber(environment.rotation, fallback.environment.rotation), -180, 180)
+    },
+    ambient: {
+      enabled: typeof ambient.enabled === "boolean" ? ambient.enabled : fallback.ambient.enabled,
+      type: ambientType,
+      color: typeof ambient.color === "string" ? ambient.color : fallback.ambient.color,
+      groundColor: typeof ambient.groundColor === "string" ? ambient.groundColor : fallback.ambient.groundColor,
+      intensity: clamp(finiteNumber(ambient.intensity, fallback.ambient.intensity), 0, 5)
+    },
+    lights
+  };
+}
+
+function usesUnboundedPreviewTime(project) {
+  return project?.supportsUnboundedPreviewTime === true;
 }
 
 function normalizeConfig(value) {
@@ -42,10 +135,22 @@ function normalizeConfig(value) {
     ? value.parameters
     : {};
   const parameters = {};
+  const playbackMode = project.supportsLoopTime === false || playback.mode === "continuous"
+    ? "continuous"
+    : "loop";
 
-  for (const [key, fallback] of Object.entries(project.defaults)) {
-    parameters[key] = finiteNumber(suppliedParameters[key], fallback);
+  for (const control of project.controls) {
+    parameters[control.key] = clamp(
+      finiteNumber(suppliedParameters[control.key], control.defaultValue),
+      control.min,
+      control.max
+    );
   }
+
+  const loopSeconds = clamp(finiteNumber(playback.loopSeconds, 8), 0.1, 3600);
+  const startTime = playbackMode === "continuous"
+    ? clamp(finiteNumber(playback.startTime, 0), 0, 0.999999)
+    : positiveModulo(finiteNumber(playback.startTime, 0), 1);
 
   return {
     schemaVersion: 1,
@@ -65,6 +170,9 @@ function normalizeConfig(value) {
         ? palette.secondary
         : (typeof palette.accent === "string" ? palette.accent : "#aeb7ff")
     },
+    appearance: value.appearance && typeof value.appearance === "object"
+      ? structuredClone(value.appearance)
+      : undefined,
     view: {
       zoom: clamp(finiteNumber(view.zoom, 1), 0.35, 4),
       panX: clamp(finiteNumber(view.panX, 0), -1, 1),
@@ -75,10 +183,15 @@ function normalizeConfig(value) {
     playback: {
       autoplay: playback.autoplay !== false,
       speed: clamp(finiteNumber(playback.speed, 1), 0.01, 8),
-      loopSeconds: clamp(finiteNumber(playback.loopSeconds, 8), 0.1, 3600),
-      startTime: positiveModulo(finiteNumber(playback.startTime, 0), 1)
+      loopSeconds,
+      startTime,
+      startElapsedTime: usesUnboundedPreviewTime(project)
+        ? Math.max(0, finiteNumber(playback.startElapsedTime, startTime * loopSeconds))
+        : startTime * loopSeconds,
+      mode: playbackMode
     },
     parameters,
+    lighting: normalizeLighting(value.lighting, project.defaultLighting, suppliedParameters),
     transparent: value.transparent === true,
     label: typeof value.label === "string" && value.label.trim()
       ? value.label.trim()
@@ -135,6 +248,7 @@ if (
       this._backendProjectId = "";
       this._config = null;
       this._time = 0;
+      this._elapsedSeconds = 0;
       this._playing = false;
       this._visible = true;
       this._connected = false;
@@ -154,14 +268,33 @@ if (
         if (!this._canAnimate()) return;
         if (this._lastTimestamp !== null && this._config) {
           const delta = Math.min(0.1, Math.max(0, (timestamp - this._lastTimestamp) / 1000));
-          this._time = positiveModulo(
-            this._time + delta * this._config.playback.speed / this._config.playback.loopSeconds,
-            1
-          );
+          const elapsedDelta = delta * this._config.playback.speed;
+          const project = CAUCE_RENDERERS[this._config.projectId];
+          if (usesUnboundedPreviewTime(project)) {
+            this._elapsedSeconds += elapsedDelta;
+            this._time = positiveModulo(
+              this._elapsedSeconds / this._config.playback.loopSeconds,
+              1
+            );
+          } else {
+            const nextTime = this._time + elapsedDelta / this._config.playback.loopSeconds;
+            if (this._config.playback.mode === "continuous" && nextTime >= 1) {
+              this._time = 0.999999;
+              this._playing = false;
+              this.dispatchEvent(new CustomEvent("cauce-ended"));
+            } else {
+              this._time = this._config.playback.mode === "loop"
+                ? positiveModulo(nextTime, 1)
+                : clamp(nextTime, 0, 0.999999);
+            }
+            this._elapsedSeconds = this._time * this._config.playback.loopSeconds;
+          }
         }
         this._lastTimestamp = timestamp;
         this._render();
-        this._frameRequest = window.requestAnimationFrame(this._tick);
+        if (this._canAnimate()) {
+          this._frameRequest = window.requestAnimationFrame(this._tick);
+        }
       };
     }
 
@@ -216,6 +349,15 @@ if (
 
     play() {
       if (!this._config) return;
+      const project = CAUCE_RENDERERS[this._config.projectId];
+      if (
+        !usesUnboundedPreviewTime(project) &&
+        this._config.playback.mode === "continuous" &&
+        this._time >= 0.999
+      ) {
+        this._time = 0;
+        this._elapsedSeconds = 0;
+      }
       this._playing = true;
       this._lastTimestamp = null;
       this._updateLoop();
@@ -228,7 +370,11 @@ if (
     }
 
     seek(time) {
-      this._time = positiveModulo(finiteNumber(time, 0), 1);
+      const suppliedTime = finiteNumber(time, 0);
+      this._time = this._config?.playback.mode === "continuous"
+        ? clamp(suppliedTime, 0, 0.999999)
+        : positiveModulo(suppliedTime, 1);
+      this._elapsedSeconds = this._time * (this._config?.playback.loopSeconds ?? 1);
       this._lastTimestamp = null;
       this._render();
     }
@@ -259,10 +405,17 @@ if (
       this._stopLoop();
       try {
         const config = normalizeConfig(value);
-        const ready = await this._setupBackend(CAUCE_RENDERERS[config.projectId], token);
+        const ready = await this._setupBackend(CAUCE_RENDERERS[config.projectId], token, config);
         if (!ready || token !== this._applyToken) return;
         this._config = config;
         this._time = this._config.playback.startTime;
+        this._elapsedSeconds = this._config.playback.startElapsedTime;
+        if (usesUnboundedPreviewTime(CAUCE_RENDERERS[this._config.projectId])) {
+          this._time = positiveModulo(
+            this._elapsedSeconds / this._config.playback.loopSeconds,
+            1
+          );
+        }
         this._playing = this._config.playback.autoplay && !this._reducedMotion.matches;
         this._lastTimestamp = null;
         this.style.setProperty(
@@ -282,7 +435,7 @@ if (
       }
     }
 
-    async _setupBackend(project, token) {
+    async _setupBackend(project, token, config) {
       if (this._backendProjectId === project.id) return true;
       this._renderer?.dispose();
       this._renderer = null;
@@ -296,7 +449,11 @@ if (
       this._canvas = nextCanvas;
 
       if (project.createRenderer) {
-        const renderer = await project.createRenderer(this._canvas);
+        const renderer = await project.createRenderer(this._canvas, {
+          initialParticleCount: Number(config.parameters.particleCount) || undefined,
+          initialSeed: config.seed,
+          initialParameters: { ...config.parameters }
+        });
         if (token !== this._applyToken) {
           renderer.dispose();
           return false;
@@ -345,10 +502,14 @@ if (
           width: this._config.format.width,
           height: this._config.format.height,
           time: this._time,
+          elapsedTime: this._elapsedSeconds,
+          timeMode: this._config.playback.mode,
           seed: this._config.seed,
           palette: this._config.palette,
+          appearance: this._config.appearance,
           view: this._config.view,
           parameters: this._config.parameters,
+          lighting: this._config.lighting,
           transparent: this._config.transparent
         });
         return;
@@ -361,10 +522,14 @@ if (
         width: this._canvas.width,
         height: this._canvas.height,
         time: this._time,
+        elapsedTime: this._elapsedSeconds,
+        timeMode: this._config.playback.mode,
         seed: this._config.seed,
         palette: this._config.palette,
+        appearance: this._config.appearance,
         view: this._config.view,
         parameters: this._config.parameters,
+        lighting: this._config.lighting,
         transparent: this._config.transparent
       });
     }

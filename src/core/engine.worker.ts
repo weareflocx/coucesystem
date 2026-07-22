@@ -4,6 +4,7 @@ import { getOutputFormat } from "./formats";
 import { clamp, positiveModulo } from "./random";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./protocol";
 import type {
+  CauceFluidResetMode,
   EngineState,
   ImageField,
   ProjectDefinition,
@@ -16,10 +17,12 @@ const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 
 let canvas: OffscreenCanvas | null = null;
 let threeCanvas: OffscreenCanvas | null = null;
+let webgpuCanvas: OffscreenCanvas | null = null;
 let context: OffscreenCanvasRenderingContext2D | null = null;
 let projectRenderer: ProjectRenderer | null = null;
 let projectRendererPromise: Promise<void> | null = null;
 let rendererProjectId = "";
+let rendererRequestedParticleCount = 0;
 let rendererLoadToken = 0;
 let state: EngineState | null = null;
 let imageField: ImageField | null = null;
@@ -27,12 +30,15 @@ let cssWidth = 1;
 let cssHeight = 1;
 let pixelRatio = 1;
 let playhead = 0;
+let elapsedSeconds = 0;
 let visible = true;
 let dirty = true;
 let frameToken: number | null = null;
 let lastTick = 0;
 let lastDraw = 0;
 let lastNotification = 0;
+let diagnosticsEnabled = false;
+let fluidResetMode: CauceFluidResetMode = "legacy-cpu";
 
 function post(message: WorkerToMainMessage): void {
   workerScope.postMessage(message);
@@ -67,10 +73,13 @@ function disposeProjectRenderer(): void {
   projectRenderer = null;
   projectRendererPromise = null;
   rendererProjectId = "";
+  rendererRequestedParticleCount = 0;
 }
 
 function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | null {
-  const rendererCanvas = project.backend === "three" ? threeCanvas : canvas;
+  const rendererCanvas = project.backend === "webgpu"
+    ? webgpuCanvas
+    : project.backend === "three" ? threeCanvas : canvas;
   if (!rendererCanvas || !project.createRenderer) {
     throw new Error(`El proyecto ${project.id} no incluye un renderer administrado.`);
   }
@@ -80,8 +89,15 @@ function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | nu
     disposeProjectRenderer();
   }
   rendererProjectId = project.id;
+  rendererRequestedParticleCount = Number(state?.parameters.particleCount) || 0;
   const loadToken = rendererLoadToken;
-  projectRendererPromise = Promise.resolve(project.createRenderer(rendererCanvas))
+  projectRendererPromise = Promise.resolve(project.createRenderer(rendererCanvas, {
+    diagnosticsEnabled,
+    fluidResetMode,
+    initialParticleCount: Number(state?.parameters.particleCount) || undefined,
+    initialSeed: state?.seed,
+    initialParameters: state ? { ...state.parameters } : undefined
+  }))
     .then((renderer) => {
       if (loadToken !== rendererLoadToken || rendererProjectId !== project.id) {
         renderer.dispose();
@@ -102,14 +118,21 @@ function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | nu
 function createProjectFrame(): ProjectFrame {
   if (!state) throw new Error("El motor no tiene estado.");
   const format = getOutputFormat(state.formatKey);
+  const project = getProject(state.projectId);
   return {
     width: format.width,
     height: format.height,
     time: playhead,
+    elapsedTime: project.supportsUnboundedPreviewTime === true
+      ? elapsedSeconds
+      : playhead * state.playback.loopSeconds,
+    timeMode: state.playback.mode,
     seed: state.seed,
     palette: state.palette,
+    appearance: state.appearance,
     view: state.view,
     parameters: state.parameters,
+    lighting: state.lighting,
     imageField
   };
 }
@@ -180,12 +203,29 @@ function tick(timestamp: number): void {
   const project = getProject(state.projectId);
   const delta = lastTick === 0 ? 0 : clamp(timestamp - lastTick, 0, 100);
   lastTick = timestamp;
+  let ended = false;
 
   if (state.playback.playing) {
-    playhead = positiveModulo(
-      playhead + (delta / 1000) * state.playback.speed / state.playback.loopSeconds,
-      1
-    );
+    const elapsedDelta = (delta / 1000) * state.playback.speed;
+    if (project.supportsUnboundedPreviewTime === true) {
+      elapsedSeconds += elapsedDelta;
+      playhead = positiveModulo(elapsedSeconds / state.playback.loopSeconds, 1);
+    } else {
+      const nextPlayhead = playhead + elapsedDelta / state.playback.loopSeconds;
+      if (state.playback.mode === "continuous" && nextPlayhead >= 1) {
+        playhead = 0.999999;
+        ended = true;
+        state = {
+          ...state,
+          playback: { ...state.playback, playing: false }
+        };
+      } else {
+        playhead = state.playback.mode === "loop"
+          ? positiveModulo(nextPlayhead, 1)
+          : clamp(nextPlayhead, 0, 0.999999);
+      }
+      elapsedSeconds = playhead * state.playback.loopSeconds;
+    }
   }
 
   const frameInterval = 1000 / project.preferredFps;
@@ -200,8 +240,15 @@ function tick(timestamp: number): void {
     }
   }
 
-  if (timestamp - lastNotification >= 100) {
-    post({ type: "frame", time: playhead });
+  if (ended || timestamp - lastNotification >= 100) {
+    post({
+      type: "frame",
+      time: playhead,
+      elapsedTime: project.supportsUnboundedPreviewTime === true
+        ? elapsedSeconds
+        : playhead * state.playback.loopSeconds,
+      ended
+    });
     lastNotification = timestamp;
   }
 
@@ -217,16 +264,23 @@ function markDirty(): void {
   ensureLoop();
 }
 
-function exportSvg(requestId: string): void {
+function exportSvg(requestId: string, variant: "flat" | "color-mesh" = "flat"): void {
   if (!state) throw new Error("No hay proyecto para exportar.");
   const project = getProject(state.projectId);
+  const exporter = variant === "color-mesh" ? project.toSvgColorMesh : project.toSvg;
+  if (!exporter || project.exportCapabilities?.svg === false) {
+    throw new Error(variant === "color-mesh"
+      ? `${project.index} · ${project.name} no ofrece SVG de malla a color.`
+      : `${project.index} · ${project.name} no ofrece exportación SVG.`);
+  }
   const format = getOutputFormat(state.formatKey);
-  const source = project.toSvg(createProjectFrame());
+  const source = exporter(createProjectFrame());
+  const variantSuffix = variant === "color-mesh" ? "-mesh-color" : "";
   post({
     type: "svg",
     requestId,
     source,
-    filename: `cauce-${project.index}-${project.id}-${format.key}-${state.seed}.svg`
+    filename: `cauce-${project.index}-${project.id}-${format.key}-${state.seed}${variantSuffix}.svg`
   });
 }
 
@@ -238,10 +292,14 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
       case "init": {
         canvas = message.canvas;
         threeCanvas = message.threeCanvas;
+        webgpuCanvas = message.webgpuCanvas;
         cssWidth = message.cssWidth;
         cssHeight = message.cssHeight;
         pixelRatio = clamp(message.pixelRatio, 1, 2.5);
+        diagnosticsEnabled = message.diagnosticsEnabled;
+        fluidResetMode = message.fluidResetMode;
         state = message.state;
+        elapsedSeconds = playhead * state.playback.loopSeconds;
         context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Canvas 2D no está disponible en el worker.");
         resizeCanvas();
@@ -258,7 +316,29 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
         break;
       }
       case "state": {
+        const previousState = state;
         state = message.state;
+        const project = getProject(state.projectId);
+        const requestedParticleCount = Number(state.parameters.particleCount);
+        const rendererCapacity = Number(projectRenderer?.getDiagnostics?.().capacity);
+        const pendingRendererCount = projectRendererPromise ? rendererRequestedParticleCount : 0;
+        if (
+          Number.isFinite(requestedParticleCount) &&
+          ((projectRenderer && Number.isFinite(rendererCapacity) && requestedParticleCount > rendererCapacity) ||
+            (projectRendererPromise && pendingRendererCount > 0 && requestedParticleCount > pendingRendererCount))
+        ) {
+          disposeProjectRenderer();
+        }
+        if (previousState?.projectId !== state.projectId) {
+          elapsedSeconds = playhead * state.playback.loopSeconds;
+        } else if (project.supportsUnboundedPreviewTime === true) {
+          playhead = positiveModulo(elapsedSeconds / state.playback.loopSeconds, 1);
+          if (previousState.playback.loopSeconds !== state.playback.loopSeconds) {
+            post({ type: "frame", time: playhead, elapsedTime: elapsedSeconds });
+          }
+        } else {
+          elapsedSeconds = playhead * state.playback.loopSeconds;
+        }
         markDirty();
         break;
       }
@@ -268,9 +348,21 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
         break;
       }
       case "seek": {
-        playhead = clamp(message.time, 0, 0.999999);
+        const project = state ? getProject(state.projectId) : null;
+        const suppliedElapsedTime = message.elapsedTime;
+        if (
+          project?.supportsUnboundedPreviewTime === true &&
+          typeof suppliedElapsedTime === "number" &&
+          Number.isFinite(suppliedElapsedTime)
+        ) {
+          elapsedSeconds = Math.max(0, suppliedElapsedTime);
+          playhead = positiveModulo(elapsedSeconds / (state?.playback.loopSeconds ?? 1), 1);
+        } else {
+          playhead = clamp(message.time, 0, 0.999999);
+          elapsedSeconds = playhead * (state?.playback.loopSeconds ?? 1);
+        }
         markDirty();
-        post({ type: "frame", time: playhead });
+        post({ type: "frame", time: playhead, elapsedTime: elapsedSeconds });
         break;
       }
       case "visibility": {
@@ -284,7 +376,15 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
         break;
       }
       case "export-svg": {
-        exportSvg(message.requestId);
+        exportSvg(message.requestId, message.variant);
+        break;
+      }
+      case "request-diagnostics": {
+        post({
+          type: "diagnostics",
+          requestId: message.requestId,
+          diagnostics: projectRenderer?.getDiagnostics?.() ?? null
+        });
         break;
       }
     }

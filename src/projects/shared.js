@@ -111,11 +111,33 @@ export function paletteSecondary(frame) {
 }
 
 export function appearanceParameters(frame) {
+  const style = frame.appearance;
+  if (style?.paint && style?.texture) {
+    const gradient = style.paint.type === "gradient";
+    const stops = gradient ? style.paint.stops : [];
+    const middle = stops.length > 2
+      ? stops.reduce((closest, stop) => (
+        Math.abs(stop.position - 0.5) < Math.abs(closest.position - 0.5) ? stop : closest
+      )).position
+      : 0.5;
+    const textureMode = style.texture.type === "none"
+      ? 0
+      : style.texture.preset === "flow" ? 1 : style.texture.preset === "grain" ? 2 : 3;
+    return {
+      gradientStrength: gradient ? 1 : 0,
+      gradientAngle: (gradient ? style.paint.angle : 0) * Math.PI / 180,
+      gradientMidpoint: middle,
+      textureMode,
+      textureScale: style.texture.type === "procedural" ? style.texture.scale : 4,
+      textureStrength: style.texture.type === "procedural" ? style.texture.strength : 0,
+      textureMotion: style.texture.type === "procedural" ? style.texture.motion : 1
+    };
+  }
   return {
     gradientStrength: clamp(parameter(frame, "gradientStrength", 0), 0, 1),
     gradientAngle: parameter(frame, "gradientAngle", 0) * Math.PI / 180,
     gradientMidpoint: clamp(parameter(frame, "gradientMidpoint", 0.46), 0.08, 0.92),
-    textureMode: clamp(Math.round(parameter(frame, "textureMode", 0)), 0, 2),
+    textureMode: clamp(Math.round(parameter(frame, "textureMode", 0)), 0, 3),
     textureScale: clamp(Math.round(parameter(frame, "textureScale", 4)), 1, 12),
     textureStrength: clamp(parameter(frame, "textureStrength", 0), 0, 1),
     textureMotion: clamp(Math.round(parameter(frame, "textureMotion", 1)), -4, 4)
@@ -139,6 +161,28 @@ export function linearGradientGeometry(frame, angle) {
 
 export function paletteGradientStops(frame, suppliedAppearance, subdivisions = 8) {
   const appearance = suppliedAppearance ?? appearanceParameters(frame);
+  if (frame.appearance?.paint?.type === "solid") {
+    const count = Math.max(2, Math.round(subdivisions) * 2 + 1);
+    return Array.from({ length: count }, (_, index) => ({
+      offset: index / (count - 1),
+      color: frame.appearance.paint.color,
+      opacity: 1
+    }));
+  }
+  if (frame.appearance?.paint?.type === "gradient") {
+    const anchors = frame.appearance.paint.stops;
+    const count = Math.max(2, Math.round(subdivisions) * 2 + 1);
+    return Array.from({ length: count }, (_, index) => {
+      const offset = index / (count - 1);
+      const endIndex = anchors.findIndex((stop) => stop.position >= offset);
+      if (endIndex <= 0) return { offset, color: anchors[0].color, opacity: 1 };
+      if (endIndex < 0) return { offset, color: anchors[anchors.length - 1].color, opacity: 1 };
+      const start = anchors[endIndex - 1];
+      const end = anchors[endIndex];
+      const progress = (offset - start.position) / Math.max(0.000001, end.position - start.position);
+      return { offset, color: mixOklabColors(start.color, end.color, progress), opacity: 1 };
+    });
+  }
   const foreground = frame.palette.foreground;
   const anchors = [
     { offset: 0, color: foreground },
@@ -170,6 +214,7 @@ export function paletteGradientStops(frame, suppliedAppearance, subdivisions = 8
 
 export function canvasGradientStyle(context, frame, suppliedAppearance) {
   const appearance = suppliedAppearance ?? appearanceParameters(frame);
+  if (frame.appearance?.paint?.type === "solid") return frame.appearance.paint.color;
   if (appearance.gradientStrength <= 0.001) return frame.palette.foreground;
   const vector = linearGradientGeometry(frame, appearance.gradientAngle);
   const gradient = context.createLinearGradient(vector.x1, vector.y1, vector.x2, vector.y2);
@@ -181,6 +226,9 @@ export function canvasGradientStyle(context, frame, suppliedAppearance) {
 
 export function svgGradientDefinition(frame, suppliedAppearance, id) {
   const appearance = suppliedAppearance ?? appearanceParameters(frame);
+  if (frame.appearance?.paint?.type === "solid") {
+    return { definition: "", paint: frame.appearance.paint.color };
+  }
   if (appearance.gradientStrength <= 0.001) {
     return { definition: "", paint: frame.palette.foreground };
   }
@@ -227,6 +275,11 @@ export function appearanceSample(frame, u, suppliedAppearance) {
   } else if (appearance.textureMode === 2) {
     const cell = Math.floor(normalizedU * appearance.textureScale * 32);
     textureTone = 0.3 + 0.7 * hashUnit((frame.seed >>> 0) ^ Math.imul(cell + 1, 0x9e3779b1));
+  } else if (appearance.textureMode === 3) {
+    const cell = Math.floor(normalizedU * appearance.textureScale * 8);
+    const coarse = hashUnit((frame.seed >>> 0) ^ Math.imul(cell + 1, 0x85ebca6b));
+    const vein = 0.5 + 0.5 * Math.cos(TAU * normalizedU * appearance.textureScale + coarse * TAU);
+    textureTone = clamp(coarse * 0.58 + vein * 0.42, 0, 1);
   }
 
   return {

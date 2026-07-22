@@ -17,14 +17,18 @@ interface EmbedConfigV1 {
   format: { width: number; height: number };
   seed: number;
   palette: EngineState["palette"];
+  appearance?: EngineState["appearance"];
   view: EngineState["view"];
   playback: {
     autoplay: boolean;
     speed: number;
     loopSeconds: number;
     startTime: number;
+    startElapsedTime: number;
+    mode: EngineState["playback"]["mode"];
   };
   parameters: Record<string, number>;
+  lighting: EngineState["lighting"];
   transparent: boolean;
   label: string;
 }
@@ -36,7 +40,12 @@ export interface WebPackageResult {
   snippet: string;
 }
 
-function createConfig(state: EngineState, time: number, transparent: boolean): EmbedConfigV1 {
+function createConfig(
+  state: EngineState,
+  time: number,
+  transparent: boolean,
+  elapsedTime: number
+): EmbedConfigV1 {
   const project = getProject(state.projectId);
   const format = getOutputFormat(state.formatKey);
   return {
@@ -45,14 +54,18 @@ function createConfig(state: EngineState, time: number, transparent: boolean): E
     format: { width: format.width, height: format.height },
     seed: state.seed,
     palette: structuredClone(state.palette),
+    appearance: structuredClone(state.appearance),
     view: structuredClone(state.view),
     playback: {
       autoplay: true,
       speed: state.playback.speed,
       loopSeconds: state.playback.loopSeconds,
-      startTime: Math.max(0, Math.min(0.999999, time))
+      startTime: Math.max(0, Math.min(0.999999, time)),
+      startElapsedTime: Math.max(0, elapsedTime),
+      mode: state.playback.mode
     },
     parameters: structuredClone(state.parameters),
+    lighting: structuredClone(state.lighting ?? null),
     transparent,
     label: `Cauce ${project.index} — ${project.name}`
   };
@@ -99,17 +112,13 @@ function createReadme(
   configFilename: string,
   snippet: string,
   usesThree: boolean,
-  usesTwo: boolean
+  usesWebGpu: boolean
 ): string {
-  const vendorEntries = [
-    usesThree
-      ? "- vendor/three.module.js y vendor/three.core.min.js: backend 3D local incluido en el paquete."
-      : "",
-    usesTwo
-      ? "- vendor/two.module.js: backend vectorial Two.js incluido localmente."
-      : ""
-  ].filter(Boolean).join("\n");
-  const vendorSection = vendorEntries ? `${vendorEntries}\n` : "";
+  const vendorSection = usesWebGpu
+    ? "- vendor/three.webgpu.js, three.tsl.js y three.core.min.js: backend WebGPU/TSL local con fallback WebGL2.\n"
+    : usesThree
+      ? "- vendor/three.module.js y vendor/three.core.min.js: backend 3D local incluido en el paquete.\n"
+    : "";
   return `# Cauce web embed
 
 ## Archivos
@@ -134,8 +143,9 @@ Sirve los archivos mediante HTTP(S); fetch no puede cargar el JSON de forma fiab
 \`document.querySelector("cauce-flow").seek(0.5)\`
 
 El valor de seek está normalizado entre 0 y 1. El componente emite los eventos
-\`cauce-ready\` y \`cauce-error\`, se pausa fuera de pantalla y respeta
-\`prefers-reduced-motion\`.
+\`cauce-ready\`, \`cauce-ended\` y \`cauce-error\`. En modo continuo se detiene
+al final de la duración configurada; en modo loop vuelve al inicio. Se pausa
+fuera de pantalla y respeta \`prefers-reduced-motion\`.
 `;
 }
 
@@ -144,17 +154,23 @@ function createProjectModuleEntries(): { name: string; contents: string }[] {
     .map(([sourcePath, contents]) => ({
       name: `projects/${sourcePath.split("/").at(-1)}`,
       contents: contents.replace(
+        /from\s+["']three\/webgpu["']/g,
+        'from "../vendor/three.webgpu.js"'
+      ).replace(
+        /from\s+["']three\/tsl["']/g,
+        'from "../vendor/three.tsl.js"'
+      ).replace(
         /from\s+["']three["']/g,
         'from "../vendor/three.module.js"'
       ).replace(
+        /import\(["']three\/webgpu["']\)/g,
+        'import("../vendor/three.webgpu.js")'
+      ).replace(
+        /import\(["']three\/tsl["']\)/g,
+        'import("../vendor/three.tsl.js")'
+      ).replace(
         /import\(["']three["']\)/g,
         'import("../vendor/three.module.js")'
-      ).replace(
-        /from\s+["']two\.js["']/g,
-        'from "../vendor/two.module.js"'
-      ).replace(
-        /import\(["']two\.js["']\)/g,
-        'import("../vendor/two.module.js")'
       )
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -163,17 +179,34 @@ function createProjectModuleEntries(): { name: string; contents: string }[] {
 export async function createWebPackage(
   state: EngineState,
   time: number,
-  transparent: boolean
+  transparent: boolean,
+  elapsedTime = time * state.playback.loopSeconds
 ): Promise<WebPackageResult> {
   const project = getProject(state.projectId);
   const format = getOutputFormat(state.formatKey);
-  const config = createConfig(state, time, transparent);
+  const config = createConfig(state, time, transparent, elapsedTime);
   const configFilename = `cauce-${project.index}-${project.id}.json`;
   const snippet = createSnippet(configFilename, format.width, format.height);
   const configSource = `${JSON.stringify(config, null, 2)}\n`;
-  const usesThree = project.backend === "three";
-  const usesTwo = project.backend === "two";
-  const threeVendorEntries = usesThree
+  const usesWebGpu = project.backend === "webgpu";
+  const usesThree = project.backend === "three" || usesWebGpu;
+  const threeVendorEntries = usesWebGpu
+    ? await Promise.all([
+      import("../../node_modules/three/build/three.webgpu.min.js?raw"),
+      import("../../node_modules/three/build/three.tsl.min.js?raw"),
+      import("../../node_modules/three/build/three.core.min.js?raw")
+    ]).then(([threeWebGpu, threeTsl, threeCore]) => [
+      { name: "vendor/three.webgpu.js", contents: threeWebGpu.default },
+      {
+        name: "vendor/three.tsl.js",
+        contents: threeTsl.default.replace(
+          /from["']three\/webgpu["']/g,
+          'from"./three.webgpu.js"'
+        )
+      },
+      { name: "vendor/three.core.min.js", contents: threeCore.default }
+    ])
+    : usesThree
     ? await Promise.all([
       import("../../node_modules/three/build/three.module.min.js?raw"),
       import("../../node_modules/three/build/three.core.min.js?raw")
@@ -182,20 +215,13 @@ export async function createWebPackage(
       { name: "vendor/three.core.min.js", contents: threeCore.default }
     ])
     : [];
-  const twoVendorEntries = usesTwo
-    ? await import("../../node_modules/two.js/build/two.module.js?raw")
-      .then((twoModule) => [
-        { name: "vendor/two.module.js", contents: twoModule.default }
-      ])
-    : [];
   const blob = createZip([
     { name: "cauce-embed.js", contents: embedModuleSource },
     ...threeVendorEntries,
-    ...twoVendorEntries,
     ...createProjectModuleEntries(),
     { name: configFilename, contents: configSource },
     { name: "index.html", contents: createExampleHtml(config, configFilename) },
-    { name: "README.md", contents: createReadme(configFilename, snippet, usesThree, usesTwo) }
+    { name: "README.md", contents: createReadme(configFilename, snippet, usesThree, usesWebGpu) }
   ]);
 
   return {

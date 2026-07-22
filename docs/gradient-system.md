@@ -1,110 +1,87 @@
-# Sistema general de gradientes
+# Sistema general de apariencia
 
 ## Estado
 
-Primera versión implementada. El editor, la persistencia y la generación de la rampa son comunes; cada backend sigue consumiendo el resultado con sus primitivas nativas.
+`AppearanceStyle v1` está implementado como contrato común para color, gradiente, material y textura procedural. `Palette` permanece como compatibilidad derivada, no como editor principal.
 
-## Veredicto
-
-El editor y los datos del gradiente deben ser comunes para 2D y 3D, pero no se creará una arquitectura de cuatro adaptadores formales. Para las necesidades actuales de Cauce sería sobreingeniería.
-
-La parte compartida es la rampa de color. Parte de tres anclas —trazo, acento y final—, mezcla el efecto según la intensidad y genera 17 muestras en OKLab. Cada renderer consume directamente esos datos usando sus primitivas existentes.
-
-```text
-ColorEditor
-      │
-      ▼
-paletteGradientStops()
-      ├── Canvas2D: CanvasGradient.addColorStop()
-      ├── Two.js: Two.Stop
-      ├── SVG: <stop>
-      └── Three.js: sampleGradient(stops, t)
-```
-
-## Diferencia entre Canvas2D, SVG y Two.js
-
-### Canvas2D
-
-Canvas2D es una API nativa de dibujo raster. Recibe órdenes inmediatas y escribe el resultado en píxeles. Es el backend adecuado para la previsualización animada, la captura de frames y el vídeo.
-
-Los gradientes se crean mediante `createLinearGradient()` o `createRadialGradient()` y se alimentan con `addColorStop()`.
-
-### SVG
-
-SVG es un documento vectorial declarativo. Conserva paths, trazos, rellenos y gradientes como elementos editables y escalables. En Cauce se utiliza como formato de exportación e inserción web, no como motor principal de la animación.
-
-Los gradientes se serializan en `<defs>` mediante `<linearGradient>` o `<radialGradient>` y elementos `<stop>`.
-
-### Two.js
-
-Two.js es una librería 2D con scene graph. No es un formato de salida adicional: traduce sus objetos `Path`, `Group`, `Gradient` y `Stop` a Canvas2D, SVG o WebGL.
-
-`05.2 · Möbius Flow Vector` utiliza `Two.Types.canvas`, por lo que su cadena real es:
-
-```text
-Cauce → Two.js → Canvas2D
-```
-
-Su exportación SVG sigue usando el serializador determinista de Cauce. No se necesita activar `Two.SVGRenderer` para implementar el editor de gradientes.
-
-## Modelo implementado
+## Modelo
 
 ```ts
-interface Palette {
-  background: string;
-  foreground: string;
-  accent: string;
-  secondary?: string;
-}
-
-interface SavedColorGradient {
-  strength: number; // 0..1
-  angle: number;    // -180..180 grados
-  midpoint: number; // 0.08..0.92
+interface AppearanceStyle {
+  schemaVersion: 1;
+  background: { color: string };
+  paint:
+    | { type: "solid"; color: string }
+    | {
+        type: "gradient";
+        stops: Array<{ color: string; position: number }>;
+        mapping: "screen" | "surface";
+        angle: number;
+      };
+  material: {
+    preset: "matte" | "satin" | "metal" | "glass";
+    roughness: number;
+    metalness: number;
+    clearcoat: number;
+  };
+  texture:
+    | { type: "none" }
+    | {
+        type: "procedural";
+        preset: "flow" | "grain" | "mineral";
+        scale: number;
+        strength: number;
+        motion: number;
+      };
 }
 ```
 
-La interfaz ofrece cuatro colores y tres decisiones de gradiente. No expone 17 puntos manuales: el motor los calcula para producir transiciones más suaves sin convertir el sidebar en un editor técnico. La dirección, el recorrido sobre la geometría y el destino —trazo, relleno o superficie— continúan siendo responsabilidad de cada proyecto.
+Un gradiente contiene entre dos y cuatro paradas. Los extremos quedan fijados en `0` y `1`; las paradas interiores pueden moverse sin cruzarse. La interpolación compartida usa OKLab.
 
-No se incluirán inicialmente tipos de material, UV, shaders, coordenadas 3D ni un registro genérico de adaptadores.
+## Flujo de render
 
-## Implementación
+```text
+AppearanceEditor
+      │
+      ▼
+AppearanceStyle v1
+      ├── Canvas2D: 17 muestras → CanvasGradient
+      ├── SVG: 17 muestras → <linearGradient>
+      ├── Three clásico: 17 muestras → atributos de vértice
+      └── WebGPU/TSL: 4 colores + posiciones → uniforms
+```
 
-La primera versión contiene:
+No se fuerza un renderer único. `appearanceCapabilities` declara el mapeado, materiales y texturas que tienen efecto real en cada proyecto. El editor oculta las decisiones que el backend activo no puede representar.
 
-1. Un editor compartido de color y gradiente.
-2. Conversión sRGB ↔ OKLab e interpolación perceptual.
-3. Tres anclas expandidas determinísticamente a 17 muestras.
-4. Un adaptador funcional pequeño para `CanvasGradient`.
-5. Conversión de las mismas muestras a `Two.Stop`.
-6. Serialización compartida de `<linearGradient>` para SVG.
-7. Muestreo de la rampa para los atributos de color de Three.js.
-8. Biblioteca de paletas dentro del backup y archivo persistente común.
+## Persistencia y migración
 
-Estas piezas pueden comenzar como funciones pequeñas. Sólo se extraerá una capa de adaptadores si futuros proyectos demuestran que existe duplicación o comportamiento específico suficiente para justificarla.
+Los registros nuevos de biblioteca usan `schemaVersion: 2` y guardan `appearance`, además de `palette` y los tres valores de gradiente antiguos para interoperabilidad. Al leer un registro v1:
 
-## Compatibilidad
+1. `gradientStrength = 0` se convierte en color sólido.
+2. Un gradiente antiguo se convierte en tres paradas: inicio, punto medio y final.
+3. Material y textura se derivan de los parámetros del proyecto cuando existen.
 
-Si un preset antiguo no contiene `secondary`, se utiliza `accent`. Si un proyecto anterior no contiene parámetros de gradiente, se incorporan sus valores por defecto; en los proyectos originalmente sólidos la intensidad por defecto es cero.
+El estado completo viaja por worker, PNG, vídeo, preset, backup, paquete web y Web Component. Aplicar una apariencia guardada puede incluir su fondo o conservar el fondo actual.
 
-Esto permite conservar guardados, presets `.cauce`, SVG, vídeo alpha, paquetes web y embeds.
+## Alcance actual
 
-## Alcance posterior
+- Máximo cuatro colores por gradiente.
+- Texturas procedurales primero; no hay subida de bitmap.
+- Mapeado de lienzo en Canvas/SVG y de superficie en los pilotos 3D.
+- Pilotos verificados: Scalar Drift, Möbius Flow 1.1 y Flow Cauce.
 
-Quedan fuera de la primera implementación:
+## Validación
 
-- Gradientes que siguen físicamente el cauce.
-- Edición manual de puntos y opacidad por punto.
-- Interpolación OKLCH seleccionable.
-- Gradientes cónicos.
-- Texturas LUT y shaders personalizados.
-- Animación independiente de los puntos de color.
+```bash
+npm run test:appearance
+npm run test:mobius
+npm run benchmark:fluid -- switch
+npm run build
+```
 
 ## Referencias
 
+- [Three.js TSL](https://threejs.org/manual/en/threejs-tsl.html)
+- [Three.js WebGPURenderer](https://threejs.org/docs/pages/WebGPURenderer.html)
 - [MDN CanvasGradient.addColorStop](https://developer.mozilla.org/en-US/docs/Web/API/CanvasGradient/addColorStop)
 - [MDN SVG linearGradient](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/linearGradient)
-- [Two.LinearGradient](https://two.js.org/docs/effects/linear-gradient/)
-- [Two.Stop](https://two.js.org/docs/effects/stop/)
-- [Three.js BufferGeometry](https://threejs.org/docs/pages/BufferGeometry.html)
-- [Three.js color management](https://threejs.org/manual/en/color-management.html)

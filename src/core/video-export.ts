@@ -133,7 +133,11 @@ async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> 
   const frameCount = Math.max(1, Math.round(state.playback.loopSeconds * fps));
   const canvas = new OffscreenCanvas(format.width, format.height);
   const projectRenderer = project.createRenderer
-    ? await project.createRenderer(canvas)
+    ? await project.createRenderer(canvas, {
+        initialParticleCount: Number(state.parameters.particleCount) || undefined,
+        initialSeed: state.seed,
+        initialParameters: { ...state.parameters }
+      })
     : null;
   const context = projectRenderer
     ? null
@@ -186,15 +190,28 @@ async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> 
         width: format.width,
         height: format.height,
         time: frameIndex / frameCount,
+        elapsedTime: frameIndex / fps,
+        timeMode: state.playback.mode,
         seed: state.seed,
         palette,
+        appearance: state.appearance
+          ? {
+              ...state.appearance,
+              background: {
+                ...state.appearance.background,
+                color: palette.background
+              }
+            }
+          : undefined,
         view: state.view,
         parameters: state.parameters,
+        lighting: state.lighting,
         transparent,
         imageField
       };
       if (projectRenderer) {
         projectRenderer.render(frame);
+        await projectRenderer.flush?.();
       } else if (context && project.render) {
         context.setTransform(1, 0, 0, 1, 0, 0);
         context.globalAlpha = 1;

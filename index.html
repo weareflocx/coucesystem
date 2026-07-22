@@ -15,15 +15,21 @@
         <header class="sidebar-header">
           <h1 id="app-title">Cauce system</h1>
           <div class="history-actions" role="group" aria-label="Historial de edición">
-            <button class="button button-quiet button-compact" id="undo-button" type="button" aria-keyshortcuts="Meta+Z Control+Z" disabled>Deshacer</button>
-            <button class="button button-quiet button-compact" id="redo-button" type="button" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y" disabled>Rehacer</button>
+            <button class="button button-quiet button-compact compact-icon-button" id="undo-button" type="button" aria-label="Deshacer" title="Deshacer" aria-keyshortcuts="Meta+Z Control+Z" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M5 12h8a6 6 0 0 1 6 6"/></svg>
+            </button>
+            <button class="button button-quiet button-compact compact-icon-button" id="redo-button" type="button" aria-label="Rehacer" title="Rehacer" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5m4-5h-8a6 6 0 0 0-6 6"/></svg>
+            </button>
           </div>
         </header>
 
         <section class="sidebar-section image-source-section" id="image-source-section" aria-labelledby="image-source-title" hidden>
           <div class="section-heading">
             <h2 class="section-label" id="image-source-title">Imagen</h2>
-            <button class="button button-quiet button-compact" id="clear-image-button" type="button" disabled>Quitar</button>
+            <button class="button button-quiet button-compact compact-icon-button" id="clear-image-button" type="button" aria-label="Quitar imagen" title="Quitar imagen" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6"/></svg>
+            </button>
           </div>
           <button class="button image-upload-button" id="image-upload-button" type="button">Seleccionar fotografía</button>
           <input id="image-upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" hidden>
@@ -31,75 +37,57 @@
           <p class="inline-error" id="image-source-error" role="alert" hidden></p>
         </section>
 
-        <section class="sidebar-section" aria-labelledby="parameters-section-title">
-          <div class="section-heading">
-            <h2 class="section-label" id="parameters-section-title">Campo</h2>
-            <button class="button button-quiet button-compact" id="reset-formula-button" type="button" title="Restaurar los parámetros originales de la fórmula">Reiniciar</button>
+        <section class="sidebar-section sidebar-inspector" aria-labelledby="parameters-section-title">
+          <div class="section-heading inspector-heading">
+            <div>
+              <p class="section-kicker">Inspector</p>
+              <h2 class="section-label" id="parameters-section-title">Ajustes del proyecto</h2>
+            </div>
+            <button class="button button-quiet button-compact compact-icon-button" id="reset-formula-button" type="button" aria-label="Reiniciar parámetros" title="Restaurar los parámetros originales de la fórmula">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6"/></svg>
+            </button>
           </div>
-          <div class="control-stack" id="project-controls"></div>
-        </section>
 
-        <section class="sidebar-section" aria-labelledby="color-section-title">
-          <div class="section-heading">
-            <h2 class="section-label" id="color-section-title">Color</h2>
-            <button class="button button-quiet button-compact" id="open-color-dialog-button" type="button">Biblioteca</button>
-          </div>
-          <div class="palette-preview" id="palette-preview" aria-label="Vista previa de la paleta actual">
-            <span data-color-role="background"></span>
-            <span data-color-role="foreground"></span>
-            <span data-color-role="accent"></span>
-            <span data-color-role="secondary"></span>
-          </div>
-          <fieldset class="color-grid">
-            <legend class="sr-only">Paleta del proyecto</legend>
-            <div class="color-control">
-              <label for="background-color">Fondo</label>
-              <div class="color-value-control">
-                <input id="background-color" type="color" value="#11110f" aria-label="Elegir color de fondo">
-                <label class="sr-only" for="background-color-value">Color de fondo hexadecimal</label>
-                <input class="color-hex-input" id="background-color-value" type="text" value="#11110F" maxlength="7" spellcheck="false" autocomplete="off">
-              </div>
-            </div>
-            <div class="color-control">
-              <label for="foreground-color">Trazo</label>
-              <div class="color-value-control">
-                <input id="foreground-color" type="color" value="#f4f3ee" aria-label="Elegir color de trazo">
-                <label class="sr-only" for="foreground-color-value">Color de trazo hexadecimal</label>
-                <input class="color-hex-input" id="foreground-color-value" type="text" value="#F4F3EE" maxlength="7" spellcheck="false" autocomplete="off">
-              </div>
-            </div>
-            <div class="color-control">
-              <label for="accent-color">Acento</label>
-              <div class="color-value-control">
-                <input id="accent-color" type="color" value="#aeb7ff" aria-label="Elegir color de acento">
-                <label class="sr-only" for="accent-color-value">Color de acento hexadecimal</label>
-                <input class="color-hex-input" id="accent-color-value" type="text" value="#AEB7FF" maxlength="7" spellcheck="false" autocomplete="off">
-              </div>
-            </div>
-            <div class="color-control">
-              <label for="secondary-color">Final</label>
-              <div class="color-value-control">
-                <input id="secondary-color" type="color" value="#8ecfc2" aria-label="Elegir color final del gradiente">
-                <label class="sr-only" for="secondary-color-value">Color final hexadecimal</label>
-                <input class="color-hex-input" id="secondary-color-value" type="text" value="#8ECFC2" maxlength="7" spellcheck="false" autocomplete="off">
-              </div>
-            </div>
+          <fieldset class="inspector-tabs" aria-label="Sección de ajustes">
+            <label class="inspector-tab" data-inspector-tab-label="essential">
+              <input type="radio" name="inspector-section" value="essential" aria-controls="inspector-essential-panel" checked>
+              <span>Principal</span>
+            </label>
+            <label class="inspector-tab" data-inspector-tab-label="motion">
+              <input type="radio" name="inspector-section" value="motion" aria-controls="inspector-motion-panel">
+              <span>Movimiento</span>
+            </label>
+            <label class="inspector-tab" data-inspector-tab-label="shape">
+              <input type="radio" name="inspector-section" value="shape" aria-controls="inspector-shape-panel">
+              <span>Forma</span>
+            </label>
+            <label class="inspector-tab" data-inspector-tab-label="appearance">
+              <input type="radio" name="inspector-section" value="appearance" aria-controls="appearance-section">
+              <span>Apariencia</span>
+            </label>
           </fieldset>
-          <button class="button button-quiet color-invert-button" id="invert-button" type="button">Invertir fondo y trazo</button>
-          <p class="inline-error color-error" id="color-error" role="alert" hidden></p>
-          <section class="gradient-editor" id="gradient-editor" aria-labelledby="gradient-editor-title" hidden>
-            <div class="gradient-editor-heading">
-              <h3 id="gradient-editor-title">Gradiente perceptual</h3>
-              <span>OKLab</span>
-            </div>
-            <div class="gradient-preview" id="gradient-preview" aria-hidden="true"></div>
-            <div class="control-stack" id="gradient-controls"></div>
-          </section>
-        </section>
 
-        <section class="sidebar-section" id="appearance-section" aria-labelledby="appearance-section-title" hidden>
-          <h2 class="section-label" id="appearance-section-title">Apariencia</h2>
-          <div class="control-stack" id="appearance-controls"></div>
+          <div class="inspector-panel" id="inspector-essential-panel" data-inspector-panel="essential">
+            <div class="inspector-control-stack" id="essential-controls"></div>
+          </div>
+          <div class="inspector-panel" id="inspector-motion-panel" data-inspector-panel="motion" hidden>
+            <div class="inspector-control-stack" id="motion-controls"></div>
+          </div>
+          <div class="inspector-panel" id="inspector-shape-panel" data-inspector-panel="shape" hidden>
+            <div class="inspector-control-stack" id="shape-controls"></div>
+          </div>
+          <div class="inspector-panel" id="appearance-section" data-inspector-panel="appearance" hidden>
+            <div class="inspector-control-stack" id="appearance-controls"></div>
+            <div class="inspector-tool-actions">
+              <button class="button button-quiet" id="open-color-from-sidebar-button" type="button" aria-controls="color-dialog">Editar apariencia</button>
+              <button class="button button-quiet" id="open-camera-from-sidebar-button" type="button" aria-controls="camera-dialog" hidden>Composición 3D</button>
+            </div>
+          </div>
+
+          <details class="inspector-advanced" id="inspector-advanced" hidden>
+            <summary><span>Avanzados</span><span id="advanced-control-count">0</span></summary>
+            <div class="inspector-control-stack" id="advanced-controls"></div>
+          </details>
         </section>
 
         <footer class="sidebar-status">
@@ -124,18 +112,211 @@
               <span>Semilla</span>
               <input id="seed-input" inputmode="numeric" min="0" max="4294967295" step="1" type="number" value="6437">
             </label>
-            <button class="button button-quiet toolbar-button" id="new-seed-button" type="button">Nueva semilla</button>
+            <button class="button button-quiet toolbar-button toolbar-icon-button compact-icon-button" id="new-seed-button" type="button" aria-label="Nueva semilla" title="Nueva semilla">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/></svg>
+            </button>
           </div>
           <div class="toolbar-status">
-            <span class="canvas-meta" id="canvas-meta">—</span>
-            <span class="engine-state" id="engine-state">CONNECTING</span>
-            <button class="button button-quiet toolbar-button" id="open-saved-dialog-button" type="button">Guardados</button>
-            <button class="button button-primary toolbar-button" id="open-export-dialog-button" type="button">Exportar</button>
+            <button class="button button-quiet toolbar-button toolbar-icon-button compact-icon-button" id="open-color-dialog-button" type="button" aria-label="Abrir apariencia" title="Apariencia" aria-controls="color-dialog" aria-expanded="false">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4h3a6 6 0 0 0-3-11Z"/><circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="7" r="1" fill="currentColor" stroke="none"/></svg>
+            </button>
+            <button class="button button-quiet toolbar-button toolbar-icon-button compact-icon-button" id="open-camera-dialog-button" type="button" aria-label="Abrir composición 3D" title="Composición 3D" aria-controls="camera-dialog" aria-expanded="false" hidden>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 9 8-4.5M12 12 4 7.5M12 12v9"/></svg>
+            </button>
+            <button class="button button-quiet toolbar-button toolbar-icon-button compact-icon-button" id="open-motion-sets-dialog-button" type="button" aria-label="Abrir presets" title="Presets" aria-controls="motion-sets-dialog" hidden>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6m4 0h6M4 12h10m4 0h2M4 18h2m4 0h10"/><circle cx="12" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
+            </button>
+            <button class="button button-quiet toolbar-button toolbar-icon-button compact-icon-button" id="open-saved-dialog-button" type="button" aria-label="Abrir proyectos guardados" title="Guardados" aria-controls="saved-dialog">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM6 4h12l2 3H4l2-3Zm4 8h4"/></svg>
+            </button>
+            <button class="button button-primary toolbar-button toolbar-icon-button compact-icon-button" id="open-export-dialog-button" type="button" aria-label="Exportar proyecto" title="Exportar" aria-controls="export-dialog">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M5 13v7h14v-7"/></svg>
+            </button>
           </div>
         </header>
         <div class="canvas-stage" id="canvas-stage" role="group" tabindex="-1">
           <canvas class="canvas-surface is-active" id="cauce-canvas" aria-label="Vista previa animada del proyecto Cauce"></canvas>
           <canvas class="canvas-surface" id="cauce-three-canvas" aria-label="Vista previa 3D animada del proyecto Cauce" aria-hidden="true"></canvas>
+          <canvas class="canvas-surface" id="cauce-webgpu-canvas" aria-label="Vista previa WebGPU animada del proyecto Cauce" aria-hidden="true"></canvas>
+          <div class="vector-export-preview" id="vector-export-preview" role="img" aria-label="Previsualización exacta del SVG de malla a color" hidden></div>
+          <div class="preview-mode-switch" id="preview-mode-switch" role="group" aria-label="Comparar vista 3D y exportación SVG" hidden>
+            <button class="preview-mode-button" id="preview-mode-3d-button" type="button" aria-pressed="true">3D</button>
+            <button class="preview-mode-button" id="preview-mode-svg-button" type="button" aria-pressed="false">SVG</button>
+          </div>
+          <section class="light-editor" id="light-editor" aria-label="Editor espacial del rig de iluminación" hidden>
+            <svg class="light-gizmo-line" id="light-gizmo-line" aria-hidden="true">
+              <line id="light-gizmo-ray" x1="0" y1="0" x2="0" y2="0"/>
+            </svg>
+            <button class="light-gizmo-handle light-gizmo-source" id="light-source-handle" type="button" aria-label="Mover luz seleccionada" title="Arrastra para mover · Opción/Alt arrastra en profundidad">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>
+            </button>
+            <button class="light-gizmo-handle light-gizmo-target" id="light-target-handle" type="button" aria-label="Mover objetivo de la luz" title="Arrastra para cambiar hacia dónde apunta">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></svg>
+            </button>
+            <fieldset class="light-editor-panel">
+              <legend>Lighting Rig</legend>
+              <div class="light-add-row">
+                <label class="sr-only" for="light-add-type">Tipo de luz</label>
+                <select id="light-add-type">
+                  <option value="spot">Focal</option>
+                  <option value="point">Puntual</option>
+                  <option value="directional">Direccional</option>
+                  <option value="rect-area">Área rectangular</option>
+                </select>
+                <button class="viewport-button compact-icon-button" id="light-add-button" type="button" aria-label="Añadir luz" title="Añadir luz">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+              <div class="light-preset-control" id="light-preset-control" hidden>
+                <div class="light-preset-row">
+                  <label class="light-field" for="light-preset-select">
+                    <span>Preset de luz</span>
+                    <select id="light-preset-select"></select>
+                  </label>
+                  <button class="viewport-button" id="light-apply-preset-button" type="button">Aplicar</button>
+                </div>
+                <p id="light-preset-description"></p>
+              </div>
+              <div class="light-rig-heading">
+                <span>Luces espaciales</span>
+                <output id="light-count-value">1 / 6</output>
+              </div>
+              <div class="light-list" id="light-list" role="list"></div>
+              <p class="light-empty-state" id="light-empty-state" hidden>El rig no tiene luces espaciales. Añade una para comenzar.</p>
+
+              <section class="light-inspector" id="light-inspector" aria-labelledby="light-inspector-title">
+                <header class="light-inspector-heading">
+                  <div>
+                    <span id="light-selected-type">Focal</span>
+                    <strong id="light-inspector-title">Key Light</strong>
+                  </div>
+                  <label class="light-compact-toggle" for="light-enabled-input">
+                    <input id="light-enabled-input" type="checkbox" checked>
+                    <span>Activa</span>
+                  </label>
+                </header>
+                <label class="light-field" for="light-name-input">
+                  <span>Nombre</span>
+                  <input id="light-name-input" type="text" maxlength="48" value="Key Light" autocomplete="off">
+                </label>
+                <label class="light-field" for="light-type-input">
+                  <span>Tipo</span>
+                  <select id="light-type-input">
+                    <option value="spot">Focal</option>
+                    <option value="point">Puntual</option>
+                    <option value="directional">Direccional</option>
+                    <option value="rect-area">Área rectangular</option>
+                  </select>
+                </label>
+                <div class="light-color-row">
+                  <label class="light-field" for="light-color-source-input">
+                    <span>Color</span>
+                    <select id="light-color-source-input">
+                      <option value="custom">Personalizado</option>
+                      <option value="foreground">Trazo</option>
+                      <option value="accent">Acento</option>
+                      <option value="secondary">Final</option>
+                    </select>
+                  </label>
+                  <label class="light-color-control" for="light-color-input">
+                    <span class="sr-only">Color personalizado</span>
+                    <input id="light-color-input" type="color" value="#ffffff" aria-label="Color personalizado de la luz">
+                  </label>
+                </div>
+                <label class="light-control" for="light-intensity-input">
+                  <span>Intensidad</span>
+                  <output id="light-intensity-value">5.0</output>
+                  <input id="light-intensity-input" type="range" min="0" max="24" step="0.1" value="5">
+                </label>
+                <label class="light-control" id="light-distance-control" for="light-distance-input">
+                  <span>Alcance</span>
+                  <output id="light-distance-value">15.0</output>
+                  <input id="light-distance-input" type="range" min="0.1" max="30" step="0.1" value="15">
+                </label>
+                <label class="light-control" id="light-angle-control" for="light-angle-input">
+                  <span>Apertura</span>
+                  <output id="light-angle-value">32.4°</output>
+                  <input id="light-angle-input" type="range" min="5" max="89" step="0.1" value="32.4">
+                </label>
+                <label class="light-control" id="light-penumbra-control" for="light-penumbra-input">
+                  <span>Suavidad</span>
+                  <output id="light-penumbra-value">1.00</output>
+                  <input id="light-penumbra-input" type="range" min="0" max="1" step="0.01" value="1">
+                </label>
+                <div class="light-area-controls" id="light-area-controls" hidden>
+                  <label class="light-control" for="light-area-width-input">
+                    <span>Anchura</span>
+                    <output id="light-area-width-value">1.4</output>
+                    <input id="light-area-width-input" type="range" min="0.1" max="8" step="0.1" value="1.4">
+                  </label>
+                  <label class="light-control" for="light-area-height-input">
+                    <span>Altura</span>
+                    <output id="light-area-height-value">1.4</output>
+                    <input id="light-area-height-input" type="range" min="0.1" max="8" step="0.1" value="1.4">
+                  </label>
+                </div>
+                <div class="light-editor-actions">
+                  <label class="light-shadow-toggle" for="light-shadows-input">
+                    <input id="light-shadows-input" type="checkbox" checked>
+                    <span>Sombras</span>
+                  </label>
+                  <span class="light-cost" id="light-shadow-cost">Coste 1×</span>
+                  <label class="light-compact-toggle" for="light-solo-input">
+                    <input id="light-solo-input" type="checkbox">
+                    <span>Solo</span>
+                  </label>
+                </div>
+                <output class="light-position-readout" id="light-position-value">0.00 · 1.20 · −0.80</output>
+                <div class="light-inspector-actions" role="group" aria-label="Acciones de la luz seleccionada">
+                  <button class="viewport-button compact-icon-button" id="light-duplicate-button" type="button" aria-label="Duplicar luz" title="Duplicar luz">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 16V5h11"/></svg>
+                  </button>
+                  <button class="viewport-button light-delete-button compact-icon-button" id="light-delete-button" type="button" aria-label="Eliminar luz" title="Eliminar luz">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6"/></svg>
+                  </button>
+                </div>
+              </section>
+
+              <details class="light-global-panel">
+                <summary>Entorno y ambiente</summary>
+                <label class="light-compact-toggle" for="light-environment-enabled-input">
+                  <input id="light-environment-enabled-input" type="checkbox" checked>
+                  <span>Reflejos HDRI</span>
+                </label>
+                <label class="light-control" for="light-environment-intensity-input">
+                  <span>Intensidad HDRI</span>
+                  <output id="light-environment-intensity-value">0.50</output>
+                  <input id="light-environment-intensity-input" type="range" min="0" max="3" step="0.01" value="0.5">
+                </label>
+                <label class="light-control" for="light-environment-rotation-input">
+                  <span>Rotación HDRI</span>
+                  <output id="light-environment-rotation-value">−123.2°</output>
+                  <input id="light-environment-rotation-input" type="range" min="-180" max="180" step="0.1" value="-123.2">
+                </label>
+                <label class="light-field" for="light-ambient-type-input">
+                  <span>Ambiente</span>
+                  <select id="light-ambient-type-input">
+                    <option value="none">Ninguna</option>
+                    <option value="ambient">Uniforme</option>
+                    <option value="hemisphere">Hemisférica</option>
+                  </select>
+                </label>
+                <label class="light-control" id="light-ambient-intensity-control" for="light-ambient-intensity-input" hidden>
+                  <span>Intensidad ambiente</span>
+                  <output id="light-ambient-intensity-value">0.60</output>
+                  <input id="light-ambient-intensity-input" type="range" min="0" max="5" step="0.01" value="0.6">
+                </label>
+                <div class="light-ambient-colors" id="light-ambient-colors" hidden>
+                  <label for="light-ambient-color-input"><span>Cielo</span><input id="light-ambient-color-input" type="color" value="#ffffff"></label>
+                  <label id="light-ground-color-control" for="light-ground-color-input"><span>Suelo</span><input id="light-ground-color-input" type="color" value="#111518"></label>
+                </div>
+              </details>
+              <button class="viewport-button light-reset-button compact-icon-button" id="light-reset-button" type="button" aria-label="Reiniciar rig de iluminación" title="Reiniciar rig de iluminación">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6"/></svg>
+              </button>
+              <p>Arrastra los puntos · Alt cambia profundidad · Rueda ajusta distancia</p>
+            </fieldset>
+          </section>
           <p class="canvas-message" id="canvas-message">Iniciando motor gráfico…</p>
           <p class="canvas-error" id="canvas-error" role="alert" hidden></p>
         </div>
@@ -185,6 +366,13 @@
                 </button>
               </div>
             </div>
+            <label class="control-label footer-control footer-time-mode" id="time-mode-control" for="playback-mode-select" hidden>
+              <span>Repetición</span>
+              <select id="playback-mode-select">
+                <option value="loop">Loop</option>
+                <option value="continuous">Continuo</option>
+              </select>
+            </label>
             <div class="loop-start-control footer-loop-start" id="loop-start-control" hidden>
               <div class="label-row">
                 <span>Inicio del bucle</span>
@@ -200,17 +388,16 @@
               </div>
             </div>
           </section>
-          <section class="viewport-hud" id="viewport-hud" aria-label="Controles de vista" aria-describedby="viewport-help" hidden>
-            <div class="viewport-readout">
-              <span>View</span>
-              <output id="viewport-value">100% · 0° / 0°</output>
-            </div>
+          <section class="viewport-hud" id="viewport-hud" aria-label="Controles de vista" hidden>
             <div class="viewport-actions" role="group" aria-label="Modo y zoom del lienzo">
               <button class="viewport-button viewport-button-icon" id="viewport-orbit-button" type="button" aria-label="Orbitar" aria-pressed="true" title="Orbitar">
                 <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M4 8.5c2.4-4.1 8.8-5.1 13.7-2.3s6.6 8.5 4.3 12.6M20 15.5c-2.4 4.1-8.8 5.1-13.7 2.3S-.3 9.3 2 5.2"/></svg>
               </button>
               <button class="viewport-button viewport-button-icon" id="viewport-pan-button" type="button" aria-label="Mover" aria-pressed="false" title="Mover">
                 <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20m0-20-3 3m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/></svg>
+              </button>
+              <button class="viewport-button viewport-button-icon" id="viewport-light-button" type="button" aria-label="Editar luz" aria-pressed="false" title="Editar luz" hidden>
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>
               </button>
               <div class="viewport-zoom-stepper" role="group" aria-label="Zoom del lienzo">
                 <button class="viewport-button viewport-button-icon" id="viewport-zoom-out-button" type="button" aria-label="Alejar vista" title="Alejar vista">
@@ -228,21 +415,56 @@
                 <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"/></svg>
               </button>
             </div>
-            <p id="viewport-help">Arrastra · Mayús/derecho mueve · Rueda aproxima</p>
           </section>
         </footer>
       </section>
     </main>
 
+    <dialog class="saved-dialog motion-sets-dialog" id="motion-sets-dialog" aria-labelledby="motion-set-title" aria-describedby="motion-set-description">
+      <div class="saved-dialog-frame motion-sets-dialog-frame">
+        <header class="dialog-header">
+          <div>
+            <p class="dialog-code">Cauce / Motion</p>
+            <h2 id="motion-set-title">Presets de movimiento</h2>
+            <p id="motion-set-description">Aplica una dinámica guardada o conserva el movimiento actual.</p>
+          </div>
+          <button class="button button-quiet button-compact compact-icon-button" id="close-motion-sets-dialog-button" type="button" aria-label="Cerrar presets de movimiento" title="Cerrar">
+            <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>
+          </button>
+        </header>
+        <section class="motion-set-section" id="motion-set-section">
+          <label class="control-label" for="motion-set-select">
+            <span>Movimiento guardado</span>
+            <select id="motion-set-select"><option value="">Selecciona un movimiento</option></select>
+          </label>
+          <div class="saved-actions" role="group" aria-label="Acciones de presets de movimiento">
+            <button class="button" id="apply-motion-set-button" type="button">Aplicar</button>
+            <button class="button button-danger" id="delete-motion-set-button" type="button" disabled>Eliminar</button>
+          </div>
+          <label class="control-label" for="motion-set-name-input">
+            <span>Guardar como</span>
+            <input id="motion-set-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Deriva de marca">
+          </label>
+          <div class="saved-actions" role="group" aria-label="Guardar preset de movimiento">
+            <button class="button button-quiet" id="save-shared-motion-set-button" type="button">Compartido</button>
+            <button class="button button-quiet" id="save-project-motion-set-button" type="button">Este proyecto</button>
+          </div>
+          <p class="inline-error" id="motion-set-error" role="alert" hidden></p>
+        </section>
+      </div>
+    </dialog>
+
     <dialog class="saved-dialog" id="saved-dialog" aria-labelledby="saved-dialog-title" aria-describedby="saved-dialog-description">
-      <div class="saved-dialog-frame">
+      <div class="saved-dialog-frame saved-library-dialog-frame">
         <header class="dialog-header">
           <div>
             <p class="dialog-code">Cauce / Library</p>
             <h2 id="saved-dialog-title">Proyectos guardados</h2>
             <p id="saved-dialog-description">Guarda el estado actual o recupera una configuración anterior.</p>
           </div>
-          <button class="button button-quiet button-compact" id="close-saved-dialog-button" type="button">Cerrar</button>
+          <button class="button button-quiet button-compact compact-icon-button" id="close-saved-dialog-button" type="button" aria-label="Cerrar proyectos guardados" title="Cerrar">
+            <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>
+          </button>
         </header>
 
         <div class="saved-dialog-content">
@@ -303,7 +525,7 @@
               <span class="export-index">04</span>
               <div>
                 <h3 id="remote-library-title">Sincronización Netlify</h3>
-                <p>Combina proyectos y paletas entre dispositivos. La clave permanece únicamente durante esta sesión.</p>
+                <p>Combina proyectos y apariencias entre dispositivos. La clave permanece únicamente durante esta sesión.</p>
               </div>
             </div>
             <label class="control-label" for="remote-library-key-input">
@@ -323,51 +545,198 @@
       </div>
     </dialog>
 
-    <dialog class="saved-dialog color-dialog" id="color-dialog" aria-labelledby="color-dialog-title" aria-describedby="color-dialog-description">
-      <div class="saved-dialog-frame">
-        <header class="dialog-header">
+    <dialog class="color-dialog" id="color-dialog" aria-labelledby="color-dialog-title">
+      <div class="export-dialog-frame color-dialog-frame">
+        <header class="dialog-header color-dialog-drag-handle" id="color-dialog-drag-handle">
           <div>
-            <p class="dialog-code">Cauce / Color</p>
-            <h2 id="color-dialog-title">Biblioteca de color</h2>
-            <p id="color-dialog-description">Guarda y reutiliza paleta y gradiente sin cargar otro proyecto.</p>
+            <p class="dialog-code">Cauce / Apariencia</p>
+            <h2 id="color-dialog-title">Apariencia</h2>
           </div>
-          <button class="button button-quiet button-compact" id="close-color-dialog-button" type="button">Cerrar</button>
+          <div class="color-dialog-header-actions">
+            <button class="button button-quiet button-compact compact-icon-button" id="reset-color-dialog-position-button" type="button" aria-label="Restablecer posición del panel de color" title="Restablecer posición">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"/></svg>
+            </button>
+            <button class="button button-quiet button-compact compact-icon-button" id="close-color-dialog-button" type="button" aria-label="Cerrar panel de color" title="Cerrar">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>
+            </button>
+          </div>
         </header>
-        <div class="saved-dialog-content">
-          <section class="saved-dialog-section" aria-labelledby="save-color-title">
-            <div class="saved-dialog-heading">
+
+        <div class="color-workspace">
+          <fieldset class="export-kind-list color-section-list">
+            <legend class="sr-only">Sección de color</legend>
+            <label class="export-kind-option color-section-option">
               <span class="export-index">01</span>
-              <div>
-                <h3 id="save-color-title">Guardar color actual</h3>
-                <p>Conserva los cuatro colores y la configuración compatible del gradiente.</p>
-              </div>
-            </div>
-            <div class="saved-color-preview" id="current-color-preview" aria-hidden="true"></div>
-            <label class="control-label" for="color-name-input">
-              <span>Nombre</span>
-              <input id="color-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Marea mineral">
+              <span class="export-kind-copy"><strong>Editar</strong></span>
+              <input class="export-kind-input color-section-input" type="radio" name="color-section" value="editor" aria-controls="color-panel-editor" checked>
             </label>
-            <button class="button" id="save-color-button" type="button">Guardar paleta</button>
-          </section>
-          <section class="saved-dialog-section" aria-labelledby="saved-colors-title">
-            <div class="saved-dialog-heading">
+            <label class="export-kind-option color-section-option">
               <span class="export-index">02</span>
-              <div>
-                <h3 id="saved-colors-title">Colores guardados</h3>
-                <p>Persisten en la misma biblioteca que los proyectos.</p>
-              </div>
-            </div>
-            <div class="saved-color-preview" id="selected-color-preview" aria-hidden="true"></div>
-            <label class="control-label" for="saved-color-select">
-              <span>Paletas</span>
-              <select id="saved-color-select"><option value="">Sin paletas guardadas</option></select>
+              <span class="export-kind-copy"><strong>Biblioteca</strong></span>
+              <input class="export-kind-input color-section-input" type="radio" name="color-section" value="library" aria-controls="color-panel-library">
             </label>
-            <div class="saved-actions" role="group" aria-label="Acciones de colores guardados">
-              <button class="button" id="apply-color-button" type="button">Aplicar</button>
-              <button class="button button-danger" id="delete-color-button" type="button">Eliminar</button>
+          </fieldset>
+
+          <div class="color-panels">
+            <section class="color-editor-panel" id="color-panel-editor" data-color-panel="editor" aria-labelledby="color-editor-title">
+            <header class="color-panel-heading">
+              <p class="dialog-code">Editor / 01</p>
+              <h3 id="color-editor-title">Superficie</h3>
+            </header>
+            <div class="palette-preview" id="palette-preview" aria-label="Vista previa de la apariencia actual"></div>
+            <div class="appearance-base-controls">
+              <div class="color-control">
+                <label for="background-color">Fondo</label>
+                <div class="color-value-control">
+                  <input id="background-color" type="color" value="#11110f" aria-label="Elegir color de fondo">
+                  <label class="sr-only" for="background-color-value">Color de fondo hexadecimal</label>
+                  <input class="color-hex-input" id="background-color-value" type="text" value="#11110F" maxlength="7" spellcheck="false" autocomplete="off">
+                </div>
+              </div>
+              <fieldset class="appearance-mode-switch">
+                <legend>Color de la forma</legend>
+                <label><input type="radio" name="appearance-paint-mode" value="solid" checked><span>Color</span></label>
+                <label><input type="radio" name="appearance-paint-mode" value="gradient"><span>Gradiente</span></label>
+              </fieldset>
             </div>
-          </section>
-          <p class="inline-error saved-dialog-message" id="color-library-error" role="alert" hidden></p>
+
+            <section class="appearance-paint-panel" id="solid-paint-editor" aria-label="Color único">
+              <div class="color-control">
+                <label for="foreground-color">Color</label>
+                <div class="color-value-control">
+                  <input id="foreground-color" type="color" value="#f4f3ee" aria-label="Elegir color de la forma">
+                  <label class="sr-only" for="foreground-color-value">Color de la forma hexadecimal</label>
+                  <input class="color-hex-input" id="foreground-color-value" type="text" value="#F4F3EE" maxlength="7" spellcheck="false" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <section class="appearance-paint-panel gradient-paint-editor" id="gradient-paint-editor" aria-label="Editor de gradiente" hidden>
+              <div class="gradient-preview" id="gradient-preview" aria-hidden="true"></div>
+              <div class="gradient-stop-list" id="gradient-stop-list"></div>
+              <button class="button button-quiet button-compact" id="add-gradient-stop-button" type="button">Añadir color</button>
+              <div class="appearance-inline-controls">
+                <label class="control-label" for="appearance-gradient-angle"><span>Dirección</span><input id="appearance-gradient-angle" type="number" min="-180" max="180" step="1" value="0"></label>
+                <label class="control-label" id="appearance-gradient-mapping-control" for="appearance-gradient-mapping"><span>Aplicación</span><select id="appearance-gradient-mapping"><option value="screen">Lienzo</option><option value="surface">Superficie</option></select></label>
+              </div>
+            </section>
+
+            <button class="button button-quiet button-compact compact-icon-button color-invert-button" id="invert-button" type="button" aria-label="Invertir fondo y superficie" title="Invertir fondo y superficie">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14m-3-3 3 3-3 3M20 16H6m3-3-3 3 3 3"/></svg>
+            </button>
+            <p class="inline-error color-error" id="color-error" role="alert" hidden></p>
+
+            <section class="appearance-section" id="appearance-material-section" aria-labelledby="appearance-material-title">
+              <div class="gradient-editor-heading"><h3 id="appearance-material-title">Material</h3></div>
+              <div class="appearance-inline-controls">
+                <label class="control-label" for="appearance-material-preset"><span>Acabado</span><select id="appearance-material-preset"><option value="matte">Mate</option><option value="satin">Satinado</option><option value="metal">Metal</option><option value="glass">Brillante</option></select></label>
+                <label class="compact-range-control" for="appearance-roughness"><span>Rugosidad</span><input id="appearance-roughness" type="range" min="0" max="1" step="0.01"><output id="appearance-roughness-value">0.65</output></label>
+                <label class="compact-range-control" for="appearance-metalness"><span>Metal</span><input id="appearance-metalness" type="range" min="0" max="1" step="0.01"><output id="appearance-metalness-value">0.00</output></label>
+                <label class="compact-range-control" for="appearance-clearcoat"><span>Capa</span><input id="appearance-clearcoat" type="range" min="0" max="1" step="0.01"><output id="appearance-clearcoat-value">0.00</output></label>
+              </div>
+            </section>
+
+            <section class="appearance-section" aria-labelledby="appearance-texture-title">
+              <div class="gradient-editor-heading"><h3 id="appearance-texture-title">Textura procedural</h3></div>
+              <label class="control-label" for="appearance-texture-preset"><span>Tipo</span><select id="appearance-texture-preset"><option value="none">Ninguna</option><option value="flow">Flujo</option><option value="grain">Grano</option><option value="mineral">Mineral</option></select></label>
+              <div class="appearance-inline-controls" id="appearance-texture-controls" hidden>
+                <label class="compact-range-control" for="appearance-texture-scale"><span>Escala</span><input id="appearance-texture-scale" type="range" min="0.1" max="24" step="0.1"><output id="appearance-texture-scale-value">4.0</output></label>
+                <label class="compact-range-control" for="appearance-texture-strength"><span>Fuerza</span><input id="appearance-texture-strength" type="range" min="0" max="1" step="0.01"><output id="appearance-texture-strength-value">0.50</output></label>
+                <label class="compact-range-control" for="appearance-texture-motion"><span>Movimiento</span><input id="appearance-texture-motion" type="range" min="-4" max="4" step="0.1"><output id="appearance-texture-motion-value">1.0</output></label>
+              </div>
+            </section>
+
+            <section id="gradient-editor" hidden><div id="gradient-controls"></div></section>
+            <details class="engine-appearance-details" id="chromatic-editor" hidden><summary>Ajustes del motor</summary><div class="control-stack" id="chromatic-controls"></div></details>
+            </section>
+
+            <div class="color-library-panel" id="color-panel-library" data-color-panel="library" aria-label="Biblioteca de color" hidden>
+              <section class="color-library-section" aria-labelledby="appearance-presets-title">
+                <div class="saved-dialog-heading"><div><h3 id="appearance-presets-title">Apariencias incluidas</h3></div></div>
+                <label class="control-label" for="appearance-apply-scope"><span>Aplicar</span><select id="appearance-apply-scope"><option value="all">Apariencia completa</option><option value="surface">Sólo superficie</option></select></label>
+                <div class="appearance-preset-list" id="appearance-preset-list"></div>
+              </section>
+              <section class="color-library-section" aria-labelledby="save-color-title">
+                <div class="saved-dialog-heading">
+                  <div>
+                    <h3 id="save-color-title">Guardar apariencia actual</h3>
+                  </div>
+                </div>
+                <div class="saved-color-preview" id="current-color-preview" aria-hidden="true"></div>
+                <label class="control-label" for="color-name-input">
+                  <span>Nombre</span>
+                  <input id="color-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Marea mineral">
+                </label>
+                <button class="button" id="save-color-button" type="button">Guardar apariencia</button>
+              </section>
+              <section class="color-library-section" aria-labelledby="saved-colors-title">
+                <div class="saved-dialog-heading">
+                  <div>
+                    <h3 id="saved-colors-title">Apariencias guardadas</h3>
+                  </div>
+                </div>
+                <div class="saved-color-preview" id="selected-color-preview" aria-hidden="true"></div>
+                <label class="control-label" for="saved-color-select">
+                  <span>Apariencias</span>
+                  <select id="saved-color-select"><option value="">Sin apariencias guardadas</option></select>
+                </label>
+                <div class="saved-actions" role="group" aria-label="Acciones de colores guardados">
+                  <button class="button" id="apply-color-button" type="button">Aplicar</button>
+                  <button class="button button-danger" id="delete-color-button" type="button">Eliminar</button>
+                </div>
+              </section>
+              <p class="inline-error color-library-error" id="color-library-error" role="alert" hidden></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="color-dialog camera-dialog" id="camera-dialog" aria-labelledby="camera-dialog-title">
+      <div class="export-dialog-frame color-dialog-frame">
+        <header class="dialog-header color-dialog-drag-handle" id="camera-dialog-drag-handle">
+          <div>
+            <h2 id="camera-dialog-title">Cámara y pose</h2>
+          </div>
+          <div class="color-dialog-header-actions">
+            <button class="button button-quiet button-compact compact-icon-button" id="reset-camera-dialog-position-button" type="button" aria-label="Recolocar panel de composición" title="Recolocar panel">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"/></svg>
+            </button>
+            <button class="button button-quiet button-compact compact-icon-button" id="close-camera-dialog-button" type="button" aria-label="Cerrar panel de composición" title="Cerrar">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>
+            </button>
+          </div>
+        </header>
+        <div class="camera-dialog-content">
+          <div class="color-editor-panel">
+            <div class="control-stack" id="camera-controls"></div>
+            <section class="camera-set-library" aria-labelledby="camera-set-title">
+              <div class="gradient-editor-heading">
+                <h3 id="camera-set-title">Sets de cámara</h3>
+                <span>Sistema / Compartidos / Proyecto</span>
+              </div>
+              <label class="control-label" for="camera-set-select">
+                <span>Vista guardada</span>
+                <select id="camera-set-select"><option value="">Selecciona una vista</option></select>
+              </label>
+              <div class="saved-actions" role="group" aria-label="Acciones de sets de cámara">
+                <button class="button" id="apply-camera-set-button" type="button">Aplicar</button>
+                <button class="button button-danger" id="delete-camera-set-button" type="button" disabled>Eliminar</button>
+              </div>
+              <label class="control-label" for="camera-set-name-input">
+                <span>Guardar como</span>
+                <input id="camera-set-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Ej. Firma frontal">
+              </label>
+              <div class="saved-actions" role="group" aria-label="Guardar set de cámara">
+                <button class="button button-quiet" id="save-shared-camera-set-button" type="button">Compartido</button>
+                <button class="button button-quiet" id="save-project-camera-set-button" type="button">Este proyecto</button>
+              </div>
+              <p class="inline-error" id="camera-set-error" role="alert" hidden></p>
+            </section>
+            <button class="button button-quiet button-compact compact-icon-button" id="reset-camera-dialog-button" type="button" aria-label="Restablecer composición" title="Restablecer composición">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </dialog>
@@ -379,7 +748,9 @@
             <h2 id="export-dialog-title">Exportar proyecto</h2>
             <p id="export-dialog-description">Genera el estado actual en el formato que necesites.</p>
           </div>
-          <button class="button button-quiet button-compact" id="close-export-dialog-button" type="button">Cerrar</button>
+          <button class="button button-quiet button-compact compact-icon-button" id="close-export-dialog-button" type="button" aria-label="Cerrar exportación" title="Cerrar">
+            <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>
+          </button>
         </header>
 
         <div class="export-workspace">
@@ -387,30 +758,57 @@
             <legend class="sr-only">Tipo de exportación</legend>
             <label class="export-kind-option">
               <span class="export-index">01</span>
+              <span class="export-kind-copy"><strong>PNG</strong><small>Fotograma raster</small></span>
+              <input class="export-kind-input" type="radio" name="export-kind" value="png" aria-controls="export-panel-png">
+            </label>
+            <label class="export-kind-option">
+              <span class="export-index">02</span>
               <span class="export-kind-copy"><strong>SVG</strong><small>Fotograma vectorial</small></span>
               <input class="export-kind-input" type="radio" name="export-kind" value="svg" aria-controls="export-panel-svg">
             </label>
             <label class="export-kind-option">
-              <span class="export-index">02</span>
+              <span class="export-index">03</span>
               <span class="export-kind-copy"><strong>Vídeo</strong><small>Edición y alpha</small></span>
               <input class="export-kind-input" type="radio" name="export-kind" value="video" aria-controls="export-panel-video" checked>
             </label>
             <label class="export-kind-option">
-              <span class="export-index">03</span>
+              <span class="export-index">04</span>
               <span class="export-kind-copy"><strong>Web</strong><small>Componente embebible</small></span>
               <input class="export-kind-input" type="radio" name="export-kind" value="web" aria-controls="export-panel-web">
             </label>
             <label class="export-kind-option">
-              <span class="export-index">04</span>
+              <span class="export-index">05</span>
               <span class="export-kind-copy"><strong>Preset</strong><small>Estado compartible</small></span>
               <input class="export-kind-input" type="radio" name="export-kind" value="preset" aria-controls="export-panel-preset">
             </label>
           </fieldset>
 
           <div class="export-panels">
-            <section class="export-option" id="export-panel-svg" data-export-panel="svg" aria-labelledby="svg-export-title" hidden>
+            <section class="export-option" id="export-panel-png" data-export-panel="png" aria-labelledby="png-export-title" hidden>
               <header class="export-panel-heading">
                 <p class="dialog-code">Output / 01</p>
+                <h3 id="png-export-title">PNG</h3>
+                <p>Fotograma raster de alta resolución del instante actual.</p>
+              </header>
+              <div class="export-panel-content">
+                <label class="control-label" for="png-background-select">
+                  <span>Superficie</span>
+                  <select id="png-background-select">
+                    <option value="transparent" selected>Transparente</option>
+                    <option value="color">Incluir color de fondo</option>
+                  </select>
+                </label>
+              </div>
+              <footer class="export-panel-footer">
+                <button class="button" id="export-png-button" type="button">Descargar PNG</button>
+                <p class="inline-error" id="png-export-error" role="alert" hidden></p>
+                <p class="export-note" id="png-export-status" role="status" aria-live="polite">Respeta el formato, encuadre y posición actuales.</p>
+              </footer>
+            </section>
+
+            <section class="export-option" id="export-panel-svg" data-export-panel="svg" aria-labelledby="svg-export-title" hidden>
+              <header class="export-panel-heading">
+                <p class="dialog-code">Output / 02</p>
                 <h3 id="svg-export-title">SVG</h3>
                 <p>Fotograma vectorial editable del instante actual.</p>
               </header>
@@ -418,14 +816,17 @@
                 <p class="export-detail">Mantiene paths, encuadre y color sólido o gradiente en el formato seleccionado.</p>
               </div>
               <footer class="export-panel-footer">
-                <button class="button" id="export-button" type="button">Descargar SVG</button>
+                <div class="video-actions" role="group" aria-label="Exportación SVG">
+                  <button class="button" id="export-button" type="button">SVG plano</button>
+                  <button class="button button-quiet" id="export-color-mesh-button" type="button" hidden>SVG malla color</button>
+                </div>
                 <p class="export-note" id="svg-export-status" role="status" aria-live="polite">Exporta el formato y la posición actuales.</p>
               </footer>
             </section>
 
             <section class="export-option" id="export-panel-video" data-export-panel="video" aria-labelledby="video-section-title">
               <header class="export-panel-heading">
-                <p class="dialog-code">Output / 02</p>
+                <p class="dialog-code">Output / 03</p>
                 <h3 id="video-section-title">Vídeo</h3>
                 <p>Perfiles optimizados para edición, web y composición.</p>
               </header>
@@ -463,7 +864,7 @@
 
             <section class="export-option" id="export-panel-web" data-export-panel="web" aria-labelledby="web-section-title" hidden>
               <header class="export-panel-heading">
-                <p class="dialog-code">Output / 03</p>
+                <p class="dialog-code">Output / 04</p>
                 <h3 id="web-section-title">Web embed</h3>
                 <p>Web Component, JSON, ejemplo HTML y documentación.</p>
               </header>
@@ -485,7 +886,7 @@
 
             <section class="export-option" id="export-panel-preset" data-export-panel="preset" aria-labelledby="preset-export-title" hidden>
               <header class="export-panel-heading">
-                <p class="dialog-code">Output / 04</p>
+                <p class="dialog-code">Output / 05</p>
                 <h3 id="preset-export-title">Preset compartible</h3>
                 <p>Estado completo para abrirlo en otra instalación de Cauce.</p>
               </header>
@@ -498,7 +899,7 @@
               <footer class="export-panel-footer">
                 <button class="button" id="export-preset-button" type="button">Descargar .cauce.json</button>
                 <p class="inline-error" id="preset-export-error" role="alert" hidden></p>
-                <p class="export-note" id="preset-export-status" role="status" aria-live="polite">Incluye proyecto, formato, paleta, tiempo y parámetros.</p>
+                <p class="export-note" id="preset-export-status" role="status" aria-live="polite">Incluye proyecto, formato, apariencia, tiempo y parámetros.</p>
               </footer>
             </section>
           </div>
@@ -520,11 +921,33 @@
     <dialog class="alert-dialog" id="delete-color-dialog" aria-labelledby="delete-color-title" aria-describedby="delete-color-description">
       <form method="dialog">
         <p class="dialog-code">Cauce / Acción destructiva</p>
-        <h2 id="delete-color-title">Eliminar paleta</h2>
-        <p id="delete-color-description">La paleta seleccionada desaparecerá de la biblioteca persistente. Los proyectos que ya usen esos colores no cambiarán.</p>
+        <h2 id="delete-color-title">Eliminar apariencia</h2>
+        <p id="delete-color-description">La apariencia seleccionada desaparecerá de la biblioteca persistente. Los proyectos que ya la usen no cambiarán.</p>
         <div class="dialog-actions">
           <button class="button button-quiet" value="cancel">Cancelar</button>
           <button class="button button-danger" id="confirm-delete-color-button" value="confirm">Eliminar</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="alert-dialog" id="delete-camera-set-dialog" aria-labelledby="delete-camera-set-title" aria-describedby="delete-camera-set-description">
+      <form method="dialog">
+        <p class="dialog-code">Cauce / Acción destructiva</p>
+        <h2 id="delete-camera-set-title">Eliminar vista de cámara</h2>
+        <p id="delete-camera-set-description">La vista seleccionada desaparecerá de la biblioteca local y no se puede deshacer.</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel">Cancelar</button>
+          <button class="button button-danger" id="confirm-delete-camera-set-button" value="confirm">Eliminar</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="alert-dialog" id="delete-motion-set-dialog" aria-labelledby="delete-motion-set-title" aria-describedby="delete-motion-set-description">
+      <form method="dialog">
+        <p class="dialog-code">Cauce / Acción destructiva</p>
+        <h2 id="delete-motion-set-title">Eliminar movimiento</h2>
+        <p id="delete-motion-set-description">El movimiento seleccionado desaparecerá de la biblioteca local y no se puede deshacer.</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel">Cancelar</button>
+          <button class="button button-danger" id="confirm-delete-motion-set-button" value="confirm">Eliminar</button>
         </div>
       </form>
     </dialog>

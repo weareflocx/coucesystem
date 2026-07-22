@@ -427,6 +427,15 @@ function cauceVideoPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [cauceLibraryPlugin(), cauceVideoPlugin()],
+  optimizeDeps: {
+    include: [
+      "three/webgpu",
+      "three/tsl",
+      "three/addons/loaders/OBJLoader.js",
+      "three/addons/loaders/RGBELoader.js",
+      "three/addons/utils/BufferGeometryUtils.js"
+    ]
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

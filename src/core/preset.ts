@@ -1,4 +1,6 @@
 import type { EngineState } from "./types";
+import { isLightingRigState } from "./lighting";
+import { isAppearanceStyle } from "./appearance";
 
 export const PRESET_SCHEMA_VERSION = 2;
 
@@ -8,6 +10,7 @@ export interface SharedPresetV2 {
   name: string;
   createdAt: string;
   time: number;
+  elapsedTime?: number;
   state: EngineState;
 }
 
@@ -41,13 +44,24 @@ export function isEngineState(value: unknown): value is EngineState {
     typeof candidate.palette.foreground === "string" &&
     (candidate.palette.accent === undefined || typeof candidate.palette.accent === "string") &&
     (candidate.palette.secondary === undefined || typeof candidate.palette.secondary === "string") &&
+    (candidate.appearance === undefined || isAppearanceStyle(candidate.appearance)) &&
     isCompatibleView(candidate.view) &&
     typeof candidate.playback === "object" &&
     candidate.playback !== null &&
     typeof candidate.playback.playing === "boolean" &&
     isFiniteNumber(candidate.playback.speed) &&
     isFiniteNumber(candidate.playback.loopSeconds) &&
-    isNumberRecord(candidate.parameters)
+    (
+      candidate.playback.mode === undefined ||
+      candidate.playback.mode === "loop" ||
+      candidate.playback.mode === "continuous"
+    ) &&
+    isNumberRecord(candidate.parameters) &&
+    (
+      candidate.lighting === undefined ||
+      candidate.lighting === null ||
+      isLightingRigState(candidate.lighting)
+    )
   );
 }
 
@@ -75,7 +89,8 @@ function slugify(value: string): string {
 export function createSharedPreset(
   name: string,
   state: EngineState,
-  time: number
+  time: number,
+  elapsedTime = time * state.playback.loopSeconds
 ): SharedPresetV2 {
   return {
     kind: "cauce-preset",
@@ -83,6 +98,7 @@ export function createSharedPreset(
     name: normalizeName(name),
     createdAt: new Date().toISOString(),
     time: normalizeTime(time),
+    elapsedTime: Math.max(0, isFiniteNumber(elapsedTime) ? elapsedTime : 0),
     state: structuredClone(state)
   };
 }
@@ -112,6 +128,9 @@ export function parseSharedPreset(source: string): SharedPresetV2 {
       ? candidate.createdAt
       : new Date().toISOString(),
     time: normalizeTime(candidate.time ?? 0),
+    elapsedTime: isFiniteNumber(candidate.elapsedTime)
+      ? Math.max(0, candidate.elapsedTime)
+      : normalizeTime(candidate.time ?? 0) * candidate.state.playback.loopSeconds,
     state: structuredClone(candidate.state)
   };
 }
@@ -119,9 +138,10 @@ export function parseSharedPreset(source: string): SharedPresetV2 {
 export function createPresetDownload(
   name: string,
   state: EngineState,
-  time: number
+  time: number,
+  elapsedTime = time * state.playback.loopSeconds
 ): { blob: Blob; filename: string; preset: SharedPresetV2 } {
-  const preset = createSharedPreset(name, state, time);
+  const preset = createSharedPreset(name, state, time, elapsedTime);
   return {
     blob: new Blob([`${JSON.stringify(preset, null, 2)}\n`], {
       type: "application/json;charset=utf-8"
