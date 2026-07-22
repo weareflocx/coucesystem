@@ -405,6 +405,8 @@ let resumeAfterScrub = false;
 let stageVisible = true;
 let vectorExportPreviewEnabled = false;
 let queuedVectorExportPreviewFrame = 0;
+let lastVectorExportPreviewTime = 0;
+const VECTOR_EXPORT_PREVIEW_INTERVAL_MS = 1000 / 12;
 let rememberedGradientPaint: Extract<AppearanceStyle["paint"], { type: "gradient" }> | null = null;
 let currentTime = 0;
 let currentElapsedTime = 0;
@@ -1249,10 +1251,22 @@ function refreshSavedProjects(selectedId = ""): void {
     : savedProjects[0]!.id;
 }
 
+function controlDependencyMatches(control: RangeControlDefinition): boolean {
+  if (!control.visibleWhen) return true;
+  const value = state.parameters[control.visibleWhen.key];
+  if (typeof control.visibleWhen.equals === "number") {
+    return value === control.visibleWhen.equals;
+  }
+  if (typeof control.visibleWhen.notEquals === "number") {
+    return value !== control.visibleWhen.notEquals;
+  }
+  return true;
+}
+
 function controlIsVisible(control: RangeControlDefinition): boolean {
   if (control.group === "lighting3d" || control.hidden) return false;
   if (control.timeMode && control.timeMode !== state.playback.mode) return false;
-  return !control.visibleWhen || state.parameters[control.visibleWhen.key] === control.visibleWhen.equals;
+  return controlDependencyMatches(control);
 }
 
 const UNIFIED_APPEARANCE_PARAMETER_KEYS = new Set([
@@ -1452,6 +1466,23 @@ function renderProjectControls(project: ProjectDefinition): void {
   let cameraCount = 0;
   let gradientCount = 0;
   let chromaticCount = 0;
+  const currentSubsection = new Map<InspectorControlSection, string>();
+
+  const appendFieldControl = (
+    fragment: DocumentFragment,
+    section: InspectorControlSection,
+    control: RangeControlDefinition,
+    controlElement: HTMLElement
+  ): void => {
+    if (control.subsection && currentSubsection.get(section) !== control.subsection) {
+      const heading = document.createElement("h3");
+      heading.className = "inspector-control-subheading";
+      heading.textContent = control.subsection;
+      fragment.appendChild(heading);
+      currentSubsection.set(section, control.subsection);
+    }
+    fragment.appendChild(controlElement);
+  };
 
   const visibleFieldControls = project.controls.filter((control) => (
     controlIsVisible(control) &&
@@ -1513,11 +1544,11 @@ function renderProjectControls(project: ProjectDefinition): void {
     } else {
       const section = fieldSectionByKey.get(control.key) ?? "shape";
       counts[section] += 1;
-      if (section === "essential") essentialFragment.appendChild(controlElement);
-      else if (section === "motion") motionFragment.appendChild(controlElement);
-      else if (section === "appearance") appearanceFragment.appendChild(controlElement);
-      else if (section === "advanced") advancedFragment.appendChild(controlElement);
-      else shapeFragment.appendChild(controlElement);
+      if (section === "essential") appendFieldControl(essentialFragment, section, control, controlElement);
+      else if (section === "motion") appendFieldControl(motionFragment, section, control, controlElement);
+      else if (section === "appearance") appendFieldControl(appearanceFragment, section, control, controlElement);
+      else if (section === "advanced") appendFieldControl(advancedFragment, section, control, controlElement);
+      else appendFieldControl(shapeFragment, section, control, controlElement);
     }
   }
 
@@ -1720,7 +1751,7 @@ function formulaUsesDefaults(project: ProjectDefinition): boolean {
   return project.controls.filter((control) => (
     !control.hidden &&
     (!control.timeMode || control.timeMode === state.playback.mode) &&
-    (!control.visibleWhen || state.parameters[control.visibleWhen.key] === control.visibleWhen.equals) &&
+    controlDependencyMatches(control) &&
     control.group !== "appearance" &&
     control.group !== "gradient" &&
     control.group !== "color3d" &&
@@ -2489,7 +2520,7 @@ function updateStaticUi(): void {
   webgpuCanvas.setAttribute("aria-hidden", String(!usesWebGpuCanvas || vectorExportPreviewEnabled));
   previewModeSwitch.hidden = typeof project.toSvgColorMesh !== "function" ||
     project.exportCapabilities?.svg === false;
-  playButton.disabled = vectorExportPreviewEnabled;
+  playButton.disabled = false;
   updateViewportHud(project);
   updatePlaybackButton();
 }
@@ -2628,7 +2659,7 @@ function normalizeCompatibleState(candidate: EngineState): EngineState {
 
   const usesLegacyVectorField = project.id === "vector-currents" &&
     typeof candidate.parameters.bend !== "number";
-  const suppliedParameters = usesLegacyVectorField
+  let suppliedParameters = usesLegacyVectorField
     ? {
         ...candidate.parameters,
         scale: 1,
@@ -2638,6 +2669,27 @@ function normalizeCompatibleState(candidate: EngineState): EngineState {
         contrast: 1.35
       }
     : candidate.parameters;
+  if (project.id === "mobius-flow-1-1") {
+    const legacyWidth = suppliedParameters.width;
+    const legacyConcentration = suppliedParameters.twistConcentration;
+    suppliedParameters = {
+      ...suppliedParameters,
+      bandWidth: typeof suppliedParameters.bandWidth === "number"
+        ? suppliedParameters.bandWidth
+        : typeof legacyWidth === "number" ? legacyWidth * 2 : project.defaults.bandWidth ?? 0.92,
+      twistDistribution: typeof suppliedParameters.twistDistribution === "number"
+        ? suppliedParameters.twistDistribution
+        : typeof legacyConcentration === "number" && legacyConcentration > 0.0001 ? 1 : 0,
+      twistExtent: typeof suppliedParameters.twistExtent === "number"
+        ? suppliedParameters.twistExtent
+        : project.defaults.twistExtent ?? 0.28,
+      twistIntensity: typeof suppliedParameters.twistIntensity === "number"
+        ? suppliedParameters.twistIntensity
+        : typeof legacyConcentration === "number"
+          ? clamp(legacyConcentration / 0.82, 0, 1)
+          : project.defaults.twistIntensity ?? 0.7
+    };
+  }
   let parameters = Object.fromEntries(project.controls.map((control) => {
     const supplied = suppliedParameters[control.key];
     const value = typeof supplied === "number" && Number.isFinite(supplied)
@@ -2717,6 +2769,7 @@ worker.addEventListener("message", (event: MessageEvent<WorkerToMainMessage>) =>
         updatePlaybackButton();
         appStatus.textContent = "Reproducción continua finalizada.";
       }
+      scheduleVectorExportPreview();
       break;
     case "svg":
       downloadSvg(message.source, message.filename);
@@ -3920,7 +3973,7 @@ function updateVectorExportPreviewLayout(): void {
   vectorExportPreview.style.height = `${height}px`;
 }
 
-function renderVectorExportPreview(): void {
+function renderVectorExportPreview(timestamp = performance.now()): void {
   queuedVectorExportPreviewFrame = 0;
   if (!vectorExportPreviewEnabled) return;
   const project = getProject(state.projectId);
@@ -3928,12 +3981,31 @@ function renderVectorExportPreview(): void {
     setVectorExportPreview(false);
     return;
   }
+  const animated = state.playback.playing && typeof project.toSvgPreview === "function";
+  if (
+    animated &&
+    timestamp - lastVectorExportPreviewTime < VECTOR_EXPORT_PREVIEW_INTERVAL_MS
+  ) {
+    queuedVectorExportPreviewFrame = window.requestAnimationFrame(renderVectorExportPreview);
+    return;
+  }
+  lastVectorExportPreviewTime = timestamp;
   try {
-    vectorExportPreview.innerHTML = project.toSvgColorMesh(createCurrentProjectFrame());
+    const exporter = animated ? project.toSvgPreview! : project.toSvgColorMesh;
+    vectorExportPreview.innerHTML = exporter(createCurrentProjectFrame());
     vectorExportPreview.setAttribute(
       "aria-label",
-      `Previsualización exacta del SVG de malla a color de ${project.name}`
+      animated
+        ? `Previsualización animada del SVG de malla a color de ${project.name}`
+        : `Previsualización exacta del SVG de malla a color de ${project.name}`
     );
+    const previewKind = animated ? "animated" : "exact";
+    if (vectorExportPreview.dataset.previewKind !== previewKind) {
+      vectorExportPreview.dataset.previewKind = previewKind;
+      svgExportStatus.textContent = animated
+        ? "Vista SVG animada · calidad de preview; la descarga conserva el detalle completo."
+        : "Vista SVG exacta · el fotograma coincide con la descarga.";
+    }
     updateVectorExportPreviewLayout();
   } catch (error) {
     setVectorExportPreview(false);
@@ -3958,12 +4030,14 @@ function setVectorExportPreview(enabled: boolean): void {
   previewModeSvgButton.setAttribute("aria-pressed", String(vectorExportPreviewEnabled));
 
   if (vectorExportPreviewEnabled) {
-    if (state.playback.playing) setPlaying(false);
-    else updateStaticUi();
+    lastVectorExportPreviewTime = 0;
+    updateStaticUi();
     updateVectorExportPreviewLayout();
     scheduleVectorExportPreview();
-    appStatus.textContent = "Vista SVG activa: la descarga será idéntica al escenario.";
-    svgExportStatus.textContent = "Vista SVG activa · cámara, pose, formato y color exportables.";
+    appStatus.textContent = "Vista SVG activa: reproduce para comparar el movimiento vectorial.";
+    svgExportStatus.textContent = state.playback.playing
+      ? "Vista SVG animada · la descarga conserva el detalle completo."
+      : "Vista SVG exacta · reproduce para verla en movimiento.";
     return;
   }
 
@@ -3971,6 +4045,8 @@ function setVectorExportPreview(enabled: boolean): void {
     window.cancelAnimationFrame(queuedVectorExportPreviewFrame);
     queuedVectorExportPreviewFrame = 0;
   }
+  lastVectorExportPreviewTime = 0;
+  delete vectorExportPreview.dataset.previewKind;
   vectorExportPreview.replaceChildren();
   updateStaticUi();
   appStatus.textContent = "Vista 3D restaurada.";

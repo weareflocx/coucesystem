@@ -11,34 +11,27 @@ import {
 import { compositionMetrics } from "./composition.js";
 import {
   MOBIUS_MOTION_MODES,
+  MOBIUS_PROFILE_MODES,
+  MOBIUS_TWIST_DISTRIBUTIONS,
   mobiusShape,
   motionSample,
   oddInteger,
   writeAnimatedMobiusPoint
 } from "./mobius-core.js";
+import {
+  createMobiusSurfaceIndices,
+  createMobiusVolumeIndices,
+  mobiusPreviewTessellation,
+  mobiusTessellation,
+  writeMobiusVolumePositions
+} from "./mobius-geometry.js";
 
 const PROJECT_ID = "mobius-flow-1-1";
-const SURFACE_SEGMENTS = 192;
-const WIDTH_SEGMENTS = 24;
-const CENTER_SAMPLES = 144;
-const SIDE_SAMPLES = 288;
 const MAX_SIDE_CURRENTS = 17;
 
-function createSurfaceGeometry(THREE) {
-  const vertexCount = (SURFACE_SEGMENTS + 1) * (WIDTH_SEGMENTS + 1);
+export function createMobiusSurfaceGeometry(THREE, tessellation) {
+  const vertexCount = tessellation.vertexCount;
   const positions = new Float32Array(vertexCount * 3);
-  const indices = [];
-
-  for (let uIndex = 0; uIndex < SURFACE_SEGMENTS; uIndex += 1) {
-    for (let vIndex = 0; vIndex < WIDTH_SEGMENTS; vIndex += 1) {
-      const row = WIDTH_SEGMENTS + 1;
-      const topLeft = uIndex * row + vIndex;
-      const topRight = topLeft + 1;
-      const bottomLeft = (uIndex + 1) * row + vIndex;
-      const bottomRight = bottomLeft + 1;
-      indices.push(topLeft, bottomLeft, topRight, bottomLeft, bottomRight, topRight);
-    }
-  }
 
   const geometry = new THREE.BufferGeometry();
   const positionAttribute = new THREE.BufferAttribute(positions, 3);
@@ -47,7 +40,40 @@ function createSurfaceGeometry(THREE) {
   const colorAttribute = new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3);
   colorAttribute.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("color", colorAttribute);
-  geometry.setIndex(indices);
+  geometry.setIndex(new THREE.BufferAttribute(
+    createMobiusSurfaceIndices(
+      tessellation.surfaceSegments,
+      tessellation.widthSegments
+    ),
+    1
+  ));
+  return geometry;
+}
+
+export function createMobiusVolumeGeometry(THREE, tessellation) {
+  const layerVertexCount = tessellation.vertexCount;
+  const geometry = new THREE.BufferGeometry();
+  const positionAttribute = new THREE.BufferAttribute(
+    new Float32Array(layerVertexCount * 2 * 3),
+    3
+  );
+  positionAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("position", positionAttribute);
+  const colorAttribute = new THREE.BufferAttribute(
+    new Float32Array(layerVertexCount * 2 * 3),
+    3
+  );
+  colorAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("color", colorAttribute);
+  geometry.userData.centerPositions = new Float32Array(layerVertexCount * 3);
+
+  geometry.setIndex(new THREE.BufferAttribute(
+    createMobiusVolumeIndices(
+      tessellation.surfaceSegments,
+      tessellation.widthSegments
+    ),
+    1
+  ));
   return geometry;
 }
 
@@ -76,18 +102,17 @@ function writeAppearanceColor(
   target[offset + 2] = blue + (backgroundColor.b - blue) * sample.textureDim;
 }
 
-function updateSurfaceGeometry(geometry, frame, cycle, colors) {
-  const shape = mobiusShape(frame);
+function updateSurfaceGeometry(geometry, frame, cycle, colors, shape, tessellation) {
   const positions = geometry.getAttribute("position").array;
   const colorValues = geometry.getAttribute("color").array;
   let offset = 0;
 
-  for (let uIndex = 0; uIndex <= SURFACE_SEGMENTS; uIndex += 1) {
-    const u = TAU * uIndex / SURFACE_SEGMENTS;
-    const sample = appearanceSample(frame, uIndex / SURFACE_SEGMENTS, colors.appearance);
+  for (let uIndex = 0; uIndex <= tessellation.surfaceSegments; uIndex += 1) {
+    const u = TAU * uIndex / tessellation.surfaceSegments;
+    const sample = appearanceSample(frame, uIndex / tessellation.surfaceSegments, colors.appearance);
     const motion = motionSample(frame, u, cycle, shape);
-    for (let vIndex = 0; vIndex <= WIDTH_SEGMENTS; vIndex += 1) {
-      const normalizedV = -1 + 2 * vIndex / WIDTH_SEGMENTS;
+    for (let vIndex = 0; vIndex <= tessellation.widthSegments; vIndex += 1) {
+      const normalizedV = -1 + 2 * vIndex / tessellation.widthSegments;
       // The parametrization already maps (2π, v) onto (0, -v). Keeping
       // the same transverse coordinate makes the final strip continuous.
       writeAnimatedMobiusPoint(
@@ -121,12 +146,65 @@ function updateSurfaceGeometry(geometry, frame, cycle, colors) {
   geometry.getAttribute("position").needsUpdate = true;
   geometry.getAttribute("color").needsUpdate = true;
   geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return { shape, cycle };
+  return { shape, cycle, tessellation };
 }
 
-function createCurrentGeometry(THREE) {
-  const maximumSegments = CENTER_SAMPLES + MAX_SIDE_CURRENTS * SIDE_SAMPLES;
+function updateVolumeGeometry(geometry, frame, cycle, colors, shape, tessellation) {
+  const centers = geometry.userData.centerPositions;
+  const positions = geometry.getAttribute("position").array;
+  const colorValues = geometry.getAttribute("color").array;
+  const layerVertexCount = tessellation.vertexCount;
+  const layerFloatCount = layerVertexCount * 3;
+  const row = tessellation.widthSegments + 1;
+  writeMobiusVolumePositions(
+    positions,
+    centers,
+    frame,
+    cycle,
+    shape,
+    tessellation
+  );
+
+  for (let uIndex = 0; uIndex <= tessellation.surfaceSegments; uIndex += 1) {
+    const sample = appearanceSample(
+      frame,
+      uIndex / tessellation.surfaceSegments,
+      colors.appearance
+    );
+    for (let vIndex = 0; vIndex <= tessellation.widthSegments; vIndex += 1) {
+      const vertex = uIndex * row + vIndex;
+      const offset = vertex * 3;
+      const backOffset = layerFloatCount + offset;
+
+      if (colors.renderMode === 0) {
+        colorValues[offset] = colors.foreground.r;
+        colorValues[offset + 1] = colors.foreground.g;
+        colorValues[offset + 2] = colors.foreground.b;
+      } else {
+        writeAppearanceColor(
+          colorValues,
+          offset,
+          colors.gradient,
+          colors.background,
+          sample,
+          colors.surfaceTone
+        );
+      }
+      colorValues[backOffset] = colorValues[offset];
+      colorValues[backOffset + 1] = colorValues[offset + 1];
+      colorValues[backOffset + 2] = colorValues[offset + 2];
+    }
+  }
+
+  geometry.getAttribute("position").needsUpdate = true;
+  geometry.getAttribute("color").needsUpdate = true;
+  geometry.computeVertexNormals();
+  return { shape, cycle, tessellation };
+}
+
+function createCurrentGeometry(THREE, tessellation) {
+  const maximumSegments = Math.max(tessellation.centerSamples, tessellation.sideSamples) +
+    MAX_SIDE_CURRENTS * tessellation.sideSamples;
   const positions = new Float32Array(maximumSegments * 2 * 3);
   const geometry = new THREE.BufferGeometry();
   const positionAttribute = new THREE.BufferAttribute(positions, 3);
@@ -151,6 +229,9 @@ function updateCurrentGeometry(geometry, frame, surface, colors) {
 
   function addCurrent(normalizedV, revolutions, samples) {
     const end = TAU * revolutions;
+    const normalOffset = surface.shape.thickness > 0.0001
+      ? surface.shape.thickness * 0.52
+      : 0;
     for (let step = 0; step < samples; step += 1) {
       const u0 = end * step / samples;
       const u1 = end * (step + 1) / samples;
@@ -164,7 +245,8 @@ function updateCurrentGeometry(geometry, frame, surface, colors) {
         normalizedV,
         surface.cycle,
         surface.shape,
-        motion0
+        motion0,
+        normalOffset
       );
       writeAnimatedMobiusPoint(
         positions,
@@ -174,7 +256,8 @@ function updateCurrentGeometry(geometry, frame, surface, colors) {
         normalizedV,
         surface.cycle,
         surface.shape,
-        motion1
+        motion1,
+        normalOffset
       );
       writeAppearanceColor(
         colorValues,
@@ -195,9 +278,15 @@ function updateCurrentGeometry(geometry, frame, surface, colors) {
   }
 
   if (visibleCurrentCount >= 3) {
-    addCurrent(0, 1, CENTER_SAMPLES);
+    addCurrent(
+      0,
+      surface.shape.thickness > 0.0001 ? 2 : 1,
+      surface.shape.thickness > 0.0001
+        ? surface.tessellation.sideSamples
+        : surface.tessellation.centerSamples
+    );
     for (let index = 1; index <= sideCurrentCount; index += 1) {
-      addCurrent(index / sideCurrentCount, 2, SIDE_SAMPLES);
+      addCurrent(index / sideCurrentCount, 2, surface.tessellation.sideSamples);
     }
   }
 
@@ -225,7 +314,9 @@ async function createMobiusRenderer(canvas) {
   const group = new THREE.Group();
   scene.add(group);
 
-  const surfaceGeometry = createSurfaceGeometry(THREE);
+  let activeTessellation = mobiusTessellation({ width: 1000, height: 1000, parameters: {} });
+  let activeGeometryMode = "surface";
+  let surfaceGeometry = createMobiusSurfaceGeometry(THREE, activeTessellation);
   const surfaceMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     vertexColors: true,
@@ -243,7 +334,7 @@ async function createMobiusRenderer(canvas) {
   surfaceMesh.frustumCulled = false;
   group.add(surfaceMesh);
 
-  const currentGeometry = createCurrentGeometry(THREE);
+  let currentGeometry = createCurrentGeometry(THREE, activeTessellation);
   const currentMaterial = new THREE.LineBasicMaterial({
     color: 0xffffff,
     vertexColors: true,
@@ -311,7 +402,43 @@ async function createMobiusRenderer(canvas) {
       surfaceTone,
       renderMode
     };
-    const surface = updateSurfaceGeometry(surfaceGeometry, frame, cycle, colors);
+    const shape = mobiusShape(frame);
+    const requestedTessellation = mobiusTessellation(frame, shape);
+    const requestedGeometryMode = shape.thickness > 0.0001 ? "volume" : "surface";
+    if (
+      requestedTessellation.signature !== activeTessellation.signature ||
+      requestedGeometryMode !== activeGeometryMode
+    ) {
+      const previousSurfaceGeometry = surfaceGeometry;
+      const previousCurrentGeometry = currentGeometry;
+      activeTessellation = requestedTessellation;
+      activeGeometryMode = requestedGeometryMode;
+      surfaceGeometry = activeGeometryMode === "volume"
+        ? createMobiusVolumeGeometry(THREE, activeTessellation)
+        : createMobiusSurfaceGeometry(THREE, activeTessellation);
+      currentGeometry = createCurrentGeometry(THREE, activeTessellation);
+      surfaceMesh.geometry = surfaceGeometry;
+      currents.geometry = currentGeometry;
+      previousSurfaceGeometry.dispose();
+      previousCurrentGeometry.dispose();
+    }
+    const surface = activeGeometryMode === "volume"
+      ? updateVolumeGeometry(
+          surfaceGeometry,
+          frame,
+          cycle,
+          colors,
+          shape,
+          activeTessellation
+        )
+      : updateSurfaceGeometry(
+          surfaceGeometry,
+          frame,
+          cycle,
+          colors,
+          shape,
+          activeTessellation
+        );
     updateCurrentGeometry(currentGeometry, frame, surface, colors);
 
     surfaceMesh.visible = true;
@@ -524,68 +651,55 @@ function pointCommand(point, command = "L") {
   return `${command}${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
 }
 
-function createVectorSurface(frame, cycle, shape, project, colorAt = null) {
+function createVectorSurface(frame, cycle, shape, tessellation, project, colorAt = null) {
   const rows = [];
-  for (let uIndex = 0; uIndex <= SURFACE_SEGMENTS; uIndex += 1) {
-    const u = TAU * uIndex / SURFACE_SEGMENTS;
+  for (let uIndex = 0; uIndex <= tessellation.surfaceSegments; uIndex += 1) {
+    const u = TAU * uIndex / tessellation.surfaceSegments;
     const motion = motionSample(frame, u, cycle, shape);
-    rows.push([
-      projectedPoint(
+    const row = [];
+    for (let vIndex = 0; vIndex <= tessellation.widthSegments; vIndex += 1) {
+      row.push(projectedPoint(
         frame,
         u,
-        -1,
+        -1 + 2 * vIndex / tessellation.widthSegments,
         cycle,
         shape,
         motion,
         project
-      ),
-      projectedPoint(
-        frame,
-        u,
-        1,
-        cycle,
-        shape,
-        motion,
-        project
-      )
-    ]);
+      ));
+    }
+    rows.push(row);
   }
 
   const cells = [];
-  for (let uIndex = 0; uIndex < SURFACE_SEGMENTS; uIndex += 1) {
-    const points = [
-      rows[uIndex][0],
-      rows[uIndex + 1][0],
-      rows[uIndex + 1][1],
-      rows[uIndex][1]
-    ];
-    cells.push({
-      gradient: colorAt
-        ? {
-            id: `mobius-flow-1-1-band-${uIndex}`,
-            startColor: colorAt(uIndex / SURFACE_SEGMENTS),
-            endColor: colorAt((uIndex + 1) / SURFACE_SEGMENTS),
-            x1: (points[0].x + points[3].x) * 0.5,
-            y1: (points[0].y + points[3].y) * 0.5,
-            x2: (points[1].x + points[2].x) * 0.5,
-            y2: (points[1].y + points[2].y) * 0.5
-          }
-        : null,
-      depth: points.reduce((sum, point) => sum + point.depth, 0) / points.length,
-      path: `${pointCommand(points[0], "M")}${pointCommand(points[1])}${pointCommand(points[2])}${pointCommand(points[3])}Z`
-    });
+  for (let uIndex = 0; uIndex < tessellation.surfaceSegments; uIndex += 1) {
+    for (let vIndex = 0; vIndex < tessellation.widthSegments; vIndex += 1) {
+      const points = [
+        rows[uIndex][vIndex],
+        rows[uIndex + 1][vIndex],
+        rows[uIndex + 1][vIndex + 1],
+        rows[uIndex][vIndex + 1]
+      ];
+      cells.push({
+        gradientId: colorAt ? `mobius-flow-1-1-band-${uIndex}` : null,
+        depth: points.reduce((sum, point) => sum + point.depth, 0) / points.length,
+        path: `${pointCommand(points[0], "M")}${pointCommand(points[1])}${pointCommand(points[2])}${pointCommand(points[3])}Z`
+      });
+    }
   }
+  const middle = Math.round(tessellation.widthSegments * 0.5);
   const definition = colorAt
-    ? `<defs>${cells.map((cell) => {
-        const gradient = cell.gradient;
-        return `<linearGradient id="${gradient.id}" gradientUnits="userSpaceOnUse" color-interpolation="linearRGB" x1="${gradient.x1.toFixed(2)}" y1="${gradient.y1.toFixed(2)}" x2="${gradient.x2.toFixed(2)}" y2="${gradient.y2.toFixed(2)}"><stop offset="0" stop-color="${gradient.startColor}"/><stop offset="1" stop-color="${gradient.endColor}"/></linearGradient>`;
+    ? `<defs>${Array.from({ length: tessellation.surfaceSegments }, (_, uIndex) => {
+        const start = rows[uIndex][middle];
+        const end = rows[uIndex + 1][middle];
+        return `<linearGradient id="mobius-flow-1-1-band-${uIndex}" gradientUnits="userSpaceOnUse" color-interpolation="linearRGB" x1="${start.x.toFixed(2)}" y1="${start.y.toFixed(2)}" x2="${end.x.toFixed(2)}" y2="${end.y.toFixed(2)}"><stop offset="0" stop-color="${colorAt(uIndex / tessellation.surfaceSegments)}"/><stop offset="1" stop-color="${colorAt((uIndex + 1) / tessellation.surfaceSegments)}"/></linearGradient>`;
       }).join("")}</defs>`
     : "";
   cells.sort((a, b) => b.depth - a.depth);
   return {
     definition,
-    paths: cells.map((cell) => cell.gradient
-      ? `<path d="${cell.path}" fill="url(#${cell.gradient.id})" stroke="url(#${cell.gradient.id})"/>`
+    paths: cells.map((cell) => cell.gradientId
+      ? `<path d="${cell.path}" fill="url(#${cell.gradientId})" stroke="url(#${cell.gradientId})"/>`
       : `<path d="${cell.path}"/>`).join("")
   };
 }
@@ -646,7 +760,7 @@ function createMeshColorSampler(frame, appearance) {
   };
 }
 
-function createVectorCurrents(frame, cycle, shape, project) {
+function createVectorCurrents(frame, cycle, shape, tessellation, project) {
   const requestedCount = Math.round(clamp(parameter(frame, "currents", 11), 0, 35));
   const visibleCount = requestedCount < 3
     ? 0
@@ -674,16 +788,19 @@ function createVectorCurrents(frame, cycle, shape, project) {
     paths.push(`<path d="${path}"/>`);
   }
 
-  addCurrent(0, 1, CENTER_SAMPLES);
+  addCurrent(0, 1, tessellation.centerSamples);
   for (let index = 1; index <= sideCount; index += 1) {
-    addCurrent(index / sideCount, 2, SIDE_SAMPLES);
+    addCurrent(index / sideCount, 2, tessellation.sideSamples);
   }
   return paths.join("");
 }
 
-function createVectorSvg(frame, colorMesh) {
+function createVectorSvg(frame, colorMesh, preview = false) {
   const cycle = positiveModulo(frame.time, 1) * TAU;
   const shape = mobiusShape(frame);
+  const tessellation = preview
+    ? mobiusPreviewTessellation(frame, shape)
+    : mobiusTessellation(frame, shape);
   const project = createVectorProjector(frame, cycle);
   const renderMode = Math.round(clamp(parameter(frame, "renderMode", 1), 0, 2));
   const appearance = appearanceParameters(frame);
@@ -694,12 +811,13 @@ function createVectorSvg(frame, colorMesh) {
     frame,
     cycle,
     shape,
+    tessellation,
     project,
     colorMesh ? createMeshColorSampler(frame, appearance) : null
   );
   const currents = renderMode === 0
     ? ""
-    : createVectorCurrents(frame, cycle, shape, project);
+    : createVectorCurrents(frame, cycle, shape, tessellation, project);
   const strokeWidth = 1.1 * Math.min(frame.width, frame.height) / 500;
   const background = frame.transparent
     ? ""
@@ -719,7 +837,11 @@ function toSvgColorMesh(frame) {
   return createVectorSvg(frame, true);
 }
 
-export const mobiusFlow11Project = {
+function toSvgPreview(frame) {
+  return createVectorSvg(frame, true, true);
+}
+
+export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDefinition} */ ({
   id: PROJECT_ID,
   index: "05.1",
   name: "Möbius Flow 1.1",
@@ -743,19 +865,26 @@ export const mobiusFlow11Project = {
       { value: 2, label: "Material", description: "Acabado plástico con clearcoat." }
     ] },
     { key: "currents", label: "Líneas de corriente", min: 0, max: 35, step: 1, defaultValue: 11, digits: 0, inspectorSection: /** @type {"essential"} */ ("essential") },
-    { key: "majorRadius", label: "Radio central", min: 0.65, max: 1.5, step: 0.01, defaultValue: 1, digits: 2 },
-    { key: "width", label: "Anchura de banda", min: 0.16, max: 0.72, step: 0.01, defaultValue: 0.46, digits: 2 },
-    { key: "halfTwists", label: "Medias torsiones", min: 1, max: 7, step: 2, defaultValue: 1, digits: 0 },
-    { key: "handedness", label: "Lateralidad", min: -1, max: 1, step: 2, defaultValue: 1, digits: 0, options: [
+    { key: "majorRadius", label: "Radio", min: 0.65, max: 1.5, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "bandWidth", label: "Anchura total", min: 0.32, max: 1.44, step: 0.01, defaultValue: 0.92, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "ellipticity", label: "Ovalado", min: 0.72, max: 1.32, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "flattening", label: "Profundidad", min: 0.5, max: 1.35, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "halfTwists", label: "Medias torsiones", min: 1, max: 15, step: 2, defaultValue: 1, digits: 0, inspectorSection: "shape", subsection: "Torsión" },
+    { key: "handedness", label: "Lateralidad", min: -1, max: 1, step: 2, defaultValue: 1, digits: 0, inspectorSection: "shape", subsection: "Torsión", options: [
       { value: 1, label: "Derecha" },
       { value: -1, label: "Izquierda" }
     ] },
-    { key: "twistPhase", label: "Fase de torsión", min: -180, max: 180, step: 1, defaultValue: 0, digits: 0, suffix: "°" },
-    { key: "twistPosition", label: "Posición de torsión", min: -180, max: 180, step: 1, defaultValue: 0, digits: 0, suffix: "°" },
-    { key: "twistConcentration", label: "Concentración", min: 0, max: 0.82, step: 0.01, defaultValue: 0, digits: 2 },
-    { key: "ellipticity", label: "Elipticidad", min: 0.72, max: 1.32, step: 0.01, defaultValue: 1, digits: 2 },
-    { key: "flattening", label: "Profundidad", min: 0.5, max: 1.35, step: 0.01, defaultValue: 1, digits: 2 },
-    { key: "widthVariation", label: "Variación de anchura", min: 0, max: 0.24, step: 0.01, defaultValue: 0, digits: 2 },
+    { key: "twistDistribution", label: "Tipo", min: 0, max: 3, step: 1, defaultValue: 0, digits: 0, inspectorSection: "shape", subsection: "Torsión", options: MOBIUS_TWIST_DISTRIBUTIONS.map((option) => ({ ...option })) },
+    { key: "twistPosition", label: "Posición", min: -180, max: 180, step: 1, defaultValue: 0, digits: 0, suffix: "°", inspectorSection: "shape", subsection: "Torsión", visibleWhen: { key: "twistDistribution", notEquals: 0 } },
+    { key: "twistExtent", label: "Extensión", min: 0.08, max: 0.8, step: 0.01, defaultValue: 0.28, digits: 2, inspectorSection: "shape", subsection: "Torsión", visibleWhen: { key: "twistDistribution", notEquals: 0 } },
+    { key: "twistIntensity", label: "Intensidad", min: 0, max: 1, step: 0.01, defaultValue: 0.7, digits: 2, inspectorSection: "shape", subsection: "Torsión", visibleWhen: { key: "twistDistribution", notEquals: 0 } },
+    { key: "profileMode", label: "Perfil", min: 0, max: 3, step: 1, defaultValue: 0, digits: 0, inspectorSection: "shape", subsection: "Perfil de cinta", options: MOBIUS_PROFILE_MODES.map((option) => ({ ...option })) },
+    { key: "profileAmount", label: "Relieve", min: 0, max: 0.45, step: 0.01, defaultValue: 0.18, digits: 2, inspectorSection: "shape", subsection: "Perfil de cinta", visibleWhen: { key: "profileMode", notEquals: 0 } },
+    { key: "profileFrequency", label: "Frecuencia", min: 1, max: 9, step: 1, defaultValue: 3, digits: 0, inspectorSection: "shape", subsection: "Perfil de cinta", visibleWhen: { key: "profileMode", equals: 3 } },
+    { key: "thickness", label: "Grosor 3D", min: 0, max: 0.18, step: 0.005, defaultValue: 0, digits: 3, inspectorSection: "shape", subsection: "Acabado geométrico" },
+    { key: "edgeRoundness", label: "Borde redondeado", min: 0, max: 1, step: 0.01, defaultValue: 0.35, digits: 2, inspectorSection: "shape", subsection: "Acabado geométrico", visibleWhen: { key: "thickness", notEquals: 0 } },
+    { key: "twistPhase", label: "Fase heredada", min: -180, max: 180, step: 1, defaultValue: 0, digits: 0, hidden: true },
+    { key: "widthVariation", label: "Anchura heredada", min: 0, max: 0.24, step: 0.01, defaultValue: 0, digits: 2, hidden: true },
     { key: "motionMode", label: "Movimiento", min: 0, max: 3, step: 1, defaultValue: 0, digits: 0, options: MOBIUS_MOTION_MODES.map((option) => ({ ...option })) },
     { key: "motionAmount", label: "Intensidad de movimiento", min: 0, max: 1, step: 0.01, defaultValue: 0.24, digits: 2 },
     { key: "motionSpeed", label: "Velocidad de movimiento", min: 0, max: 4, step: 0.05, defaultValue: 1, digits: 2 },
@@ -793,15 +922,22 @@ export const mobiusFlow11Project = {
     currents: 11,
     renderMode: 1,
     majorRadius: 1,
-    width: 0.46,
+    bandWidth: 0.92,
     halfTwists: 1,
     handedness: 1,
     twistPhase: 0,
     twistPosition: 0,
-    twistConcentration: 0,
+    twistDistribution: 0,
+    twistExtent: 0.28,
+    twistIntensity: 0.7,
     ellipticity: 1,
     flattening: 1,
     widthVariation: 0,
+    profileMode: 0,
+    profileAmount: 0.18,
+    profileFrequency: 3,
+    thickness: 0,
+    edgeRoundness: 0.35,
     motionMode: 0,
     motionAmount: 0.24,
     motionSpeed: 1,
@@ -830,5 +966,6 @@ export const mobiusFlow11Project = {
   },
   createRenderer: createMobiusRenderer,
   toSvg,
-  toSvgColorMesh
-};
+  toSvgColorMesh,
+  toSvgPreview
+});

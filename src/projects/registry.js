@@ -1,6 +1,7 @@
 import { confluenceWeaveProject } from "./confluence-weave.js";
 import { chromaticFluxProject } from "./chromatic-flux.js";
 import { chromaticFluxWebGpuProject } from "./chromatic-flux-webgpu.js";
+import { chromaticFluidProject } from "./chromatic-fluid.js";
 import { flowCompression2Project } from "./flow-compression-2.js";
 import { flowCompressionProject } from "./flow-compression.js";
 import { flowCauceProject } from "./flow-cauce.js";
@@ -33,5 +34,6 @@ export const CAUCE_PROJECTS = [
   tensionNetworkProject,
   chromaticFluxWebGpuProject,
   fluidParticlesWebGpuProject,
-  flowCauceProject
+  flowCauceProject,
+  chromaticFluidProject
 ];

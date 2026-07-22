@@ -33,7 +33,11 @@ npm run build
 ```
 
 Con `npm run dev` abierto, la matriz WebGPU se ejecuta mediante
-`npm run benchmark:fluid`.
+`npm run benchmark:fluid`. `npm run benchmark:fluid -- reuse` verifica el
+cambio Flow Cauce → Chromatic Fluid → Flow Cauce y los perfiles compartidos
+32k/64k/128k. `npm run test:fluid-reuse` valida además el contrato estático del
+segundo consumidor. `npm run benchmark:fluid -- chromatic` mide compute y
+render GPU de las dos formas de 08.5 en esos perfiles.
 
 ## Arquitectura
 
@@ -56,7 +60,7 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `04 · Orbital Basin`: órbitas cerradas sobre una cuenca planar con dos tangencias compartidas.
 - `04.1 · Orbital Basin Flow`: una onda de densidad modifica grosor, profundidad y tangencias mientras recorre la cuenca orbital.
 - `05 · Möbius Flow`: corrientes cerradas sobre una banda de Möbius paramétrica, con una cara y un único borde.
-- `05.1 · Möbius Flow 1.1`: malla Three.js de doble cara con depth buffer, iluminación y corrientes 3D.
+- `05.1 · Möbius Flow 1.1`: cinta Möbius con 1–15 medias torsiones, distribuciones controlables, perfiles geométricos, grosor 3D y SVG adaptativo.
 - `05.2 · Möbius Flow Dynamics`: flujo continuo de hasta 24.000 partículas con estelas GPU, velocidades independientes, circulación inversa y turbulencia sobre la superficie Möbius.
 - Apariencia compartida: color único o gradiente perceptual OKLab de dos a cuatro colores, fondo independiente, materiales y texturas procedurales `Flujo`, `Grano` y `Mineral`.
 - Biblioteca de apariencias persistente: conserva la configuración completa en el navegador y en el mismo archivo local `.cauce/library.json` que los proyectos guardados; las paletas antiguas se migran al abrirlas.
@@ -71,7 +75,8 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `08.2 · Chromatic Flux WebGPU`: primera pieza del backend Three.js WebGPU/TSL, con hasta 160.000 partículas esféricas por canal, campos analíticos deterministas, relieve iluminado y fallback WebGL2. Exporta PNG, vídeo y web sin SVG.
 - `08.3 · Fluid Particles WebGPU`: prototipo WebGPU estricto con solver MLS-MPM stateful, 4.096–262.144 partículas, grid físico 48³/64³/96³, contenedores físicos cubo/rectángulo/pirámide/esfera y representaciones redonda, esfera, cubo o `Flow orgánica` sobre un único estado de simulación. Esta última alarga cada partícula, la orienta con la velocidad suavizada y modula su tamaño con la densidad para producir movimientos colectivos próximos a una bandada. Exporta PNG, vídeo y web sin SVG.
 - `08.4 · Flow Cauce`: evolución Cauce de `holtsetio/flow` sobre Three.js r185. Conserva grid 64³, cinco kernels MLS-MPM, distribución esférica, ruido triangular, densidad, color HSV, partículas redondeadas alargadas e interacción. El renderer propio usa materiales PBR, sala opcional, HDRI, luces y sombras sin bloom ni MRT. Añade semilla determinista, formatos, cámara compartida, presets, PNG, vídeo, modo limpio con alpha y un modelo de superficie CSF opcional con tres kernels adicionales para masa suavizada, normal, curvatura y cohesión; no ofrece SVG, loop ni paquete web mientras su runtime y assets anidados no formen parte del ZIP.
-- `Cauce Fluid Engine 0.2`: núcleo compartido con perfiles físicos 32k/64k/128k, buffer visual opcional (`direction`/`color`), diagnóstico de memoria y reset CPU compatible o GPU v2 opt-in mediante `?fluid-reset=gpu-v2`. La suite `npm run benchmark:fluid -- reset` mide los reinicios por capacidad.
+- `08.5 · Chromatic Fluid`: segundo consumidor de Cauce Fluid Engine 0.2. Cada partícula física tiene una única representación opaca con `Flow original` o esfera; su color recorre continuamente el gradiente mediante densidad, velocidad, posición y tiempo, con el HSV original como alternativa. No duplica simulación ni reserva el buffer visual de Flow. Admite 32k/64k/128k, PNG y vídeo, pero todavía no SVG ni paquete web.
+- `Cauce Fluid Engine 0.2`: núcleo compartido con perfiles físicos 32k/64k/128k, buffer visual opcional (`direction`/`color`), diagnóstico de memoria y reset CPU compatible o GPU v2 opt-in mediante `?fluid-reset=gpu-v2`. Las suites `reset` y `reuse` miden respectivamente los reinicios y el contrato entre consumidores.
 - Guardados locales v2 con migración de v1, copia conjunta de proyectos y apariencias e intercambio mediante `.cauce.json`.
 - Exportación SVG del fotograma actual.
 - Exportación PNG RGBA del fotograma actual, con fondo o canal alpha.

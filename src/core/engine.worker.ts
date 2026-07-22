@@ -37,6 +37,7 @@ let frameToken: number | null = null;
 let lastTick = 0;
 let lastDraw = 0;
 let lastNotification = 0;
+const FRAME_NOTIFICATION_INTERVAL_MS = 50;
 let diagnosticsEnabled = false;
 let fluidResetMode: CauceFluidResetMode = "legacy-cpu";
 
@@ -240,7 +241,7 @@ function tick(timestamp: number): void {
     }
   }
 
-  if (ended || timestamp - lastNotification >= 100) {
+  if (ended || timestamp - lastNotification >= FRAME_NOTIFICATION_INTERVAL_MS) {
     post({
       type: "frame",
       time: playhead,

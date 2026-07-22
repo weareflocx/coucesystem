@@ -79,9 +79,11 @@ Con el servidor de desarrollo abierto en el origen canónico
 
 ```bash
 npm run benchmark:fluid
+npm run benchmark:fluid -- chromatic
 npm run benchmark:fluid -- physics
 npm run benchmark:fluid -- render
 npm run benchmark:fluid -- reset
+npm run benchmark:fluid -- reuse
 npm run benchmark:fluid -- switch
 ```
 
@@ -229,14 +231,108 @@ opcional activa todavía una ruta física distinta ni elimina el fallback direct
 3. Separación de `direction` y `color` en un buffer visual opcional; no añade
    un dispatch y permite que otros proyectos consuman solo el estado físico.
 4. Diagnóstico y benchmark de memoria, capacidad y reset.
+5. `08.5 · Chromatic Fluid` como segundo consumidor real: una instancia del
+   motor, un `particleBuffer`, una representación por partícula y
+   `visualMode: "none"`.
+
+## Prueba de reutilización 0.2
+
+La suite `reuse` ejecuta Flow Cauce → Chromatic Fluid → Flow Cauce en WebGPU
+real y promociona el segundo consumidor por los tres perfiles. La comprobación
+del 22 de julio de 2026 obtuvo:
+
+| Consumidor | Partículas | Dispatches base | Buffers físicos | Buffers visuales | Memoria física | Memoria visual |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Flow Cauce | 32k | 5 | 1 | 1 | 2,5 MiB | 1 MiB |
+| Chromatic Fluid | 32k | 5 | 1 | 0 | 2,5 MiB | 0 MiB |
+| Chromatic Fluid | 64k | 5 | 1 | 0 | 5 MiB | 0 MiB |
+| Chromatic Fluid | 128k | 5 | 1 | 0 | 10 MiB | 0 MiB |
+| Flow Cauce, regreso | 32k | 5 | 1 | 1 | 2,5 MiB | 1 MiB |
+
+El renderer usa una sola representación opaca por partícula. Las formas Flow y
+esfera comparten el mismo estado, mientras el gradiente evoluciona en GPU
+mediante densidad, velocidad, espacio y tiempo. No se multiplican
+partículas, rejilla, estado físico ni dispatches de compute. La prueba estática
+complementaria se ejecuta con
+`npm run test:fluid-reuse` y falla si el runtime crea más de un motor, importa
+Flow Cauce o activa su buffer visual.
+
+La prueba también ha expuesto el acoplamiento que debe corregir 0.3: `uniforms`
+continúa publicando en un único objeto tanto parámetros físicos como opciones
+de color y material de Flow. Chromatic Fluid usa exclusivamente el subconjunto
+físico, pero la API siguiente debe separar configuración física y extensiones
+visuales sin cambiar los buffers ni el orden del solver.
+
+### Capacidad visual de Chromatic Fluid
+
+Medición de referencia del 22 de julio de 2026 sobre Chrome/WebGPU/Metal,
+anterior a indexar la esfera. Cada combinación se ejecutó dos veces en órdenes
+opuestos; la tabla muestra la mediana. `GPU total` incluye compute y render,
+pero no debe confundirse con el framerate completo de Studio.
+
+| Forma | 32k | 64k | 128k | Pasos físicos en 128k |
+| --- | ---: | ---: | ---: | ---: |
+| Flow original | 5,27 ms | 9,23 ms | 11,81 ms | 60,0/s |
+| Esfera | 10,13 ms | 12,34 ms | 14,48 ms | 59,3/s |
+
+Con un presupuesto GPU de 16,7 ms para 60 FPS, 128k es utilizable en Flow
+original y esfera en esta máquina. La forma Gota se retiró porque era el único
+perfil que superaba el presupuesto y no aportaba suficiente valor visual. El
+límite técnico de 0.2 continúa siendo 131.072 partículas. Esta medición no
+demuestra el techo por encima de 128k: para ello haría falta añadir perfiles
+experimentales sin convertirlos todavía en controles públicos.
+
+La esfera conserva sus 80 triángulos y sus normales, pero ahora elimina el UV
+que no consume el material y comparte los vértices coincidentes: pasa de 240
+vértices no indexados a 42 vértices y 240 índices. Una primera ejecución tras
+el cambio redujo el render GPU de esfera de 8,19 a 4,58 ms en 32k, de 10,07 a
+5,24 ms en 64k y de 11,77 a 10,55 ms en 128k. El último perfil mostró más
+variación en compute, por lo que no se atribuye una mejora del frame total sin
+repetir la prueba con el equipo en reposo. La suite usa ahora tres repeticiones
+y órdenes alternos por defecto.
+
+### Trabajo pendiente de rendimiento visual
+
+Orden de trabajo para la próxima sesión:
+
+1. Repetir `npm run benchmark:fluid -- chromatic` con el equipo en reposo y
+   tres muestras válidas por combinación. Registrar render, compute y frame
+   GPU por separado; no usar el máximo teórico GPU como FPS real de Studio.
+2. Construir shaders especializados para `Flow original` y `Esfera`. La ruta
+   esférica no debe calcular la orientación por velocidad que solo consume
+   Flow. Conservar el shader compartido actual como referencia A/B y aceptar
+   el cambio únicamente si mejora 64k y 128k.
+3. Medir `MeshPhysicalNodeMaterial` frente a `MeshStandardNodeMaterial` por
+   preset. Matte y metal pueden usar la ruta estándar si la imagen coincide;
+   satin conservará clearcoat cuando su pérdida sea visible. Comparar color,
+   brillo y silueta antes de cambiar el material predeterminado.
+4. Separar el coste por vértice del coste por fragmento mediante pruebas de
+   resolución y tamaño de partícula. Si domina el relleno de pantalla, probar
+   una resolución adaptativa solo en preview; las exportaciones mantendrán la
+   resolución solicitada y el material de máxima fidelidad.
+5. Probar LOD o una esfera de 20/32 triángulos solo si las optimizaciones
+   anteriores no mantienen 128k dentro de 16,7 ms GPU. El LOD debe depender de
+   tamaño proyectado y validarse mediante captura comparativa; no se reducirá
+   la geometría de exportación por defecto.
+6. Después de estabilizar el renderer, habilitar capacidades experimentales
+   de 160k, 192k y 256k fuera de la interfaz pública para localizar el techo
+   real. No ampliar el control de partículas hasta verificar memoria, pasos/s,
+   frame GPU y estabilidad durante una ejecución prolongada.
+
+Restricciones: conservar una instancia del motor, un `particleBuffer`, una
+representación opaca por partícula y cero buffers visuales adicionales en
+Chromatic Fluid. No presentar como optimización una reducción de partículas,
+una pérdida visual no comparada o una medición tomada con la GPU saturada.
 
 ## Siguiente fase
 
-1. Comparar proxies de sombra esféricos más pequeños con el actual de veinte
-   triángulos antes de modificar la resolución de los mapas de sombra.
-2. Estudiar celdas activas y reducción de contención atómica.
-3. Evaluar culling GPU/draw indirecto solo con dominios mayores o una cámara
-   que deje una parte significativa de las partículas fuera de pantalla.
+1. Extraer una configuración física explícita sin el estado visual de Flow.
+2. Añadir vorticidad y confinamiento de curl como primer módulo de fuerzas.
+3. Incorporar colisionadores SDF componibles: esfera, caja y pirámide.
+4. Separar la respuesta de pared en fricción, deslizamiento y adhesión.
+5. Comparar las distribuciones GPU esfera, volumen, capa, chorro y nube contra
+   `legacy-cpu`, que seguirá siendo el modo predeterminado hasta demostrar
+   fidelidad.
 
 El culling GPU y el draw indirecto quedan deliberadamente como prototipo
 condicional. En la medición actual, 128k partículas ya alcanzan 11,6 ms de
@@ -260,6 +356,6 @@ Los módulos físicos se incorporarán sobre este núcleo en este orden:
 5. presión más incompresible;
 6. reconstrucción visual de superficie.
 
-Chromatic Fluid debería consumir un único `particleBuffer` y dibujarlo en
-capas RGB. Tres fluidos independientes solo se justificarán cuando cada canal
-necesite física diferente, porque triplicarían estado y cómputo.
+Chromatic Fluid consume un único `particleBuffer` y dibuja una geometría por
+partícula. Simulaciones independientes solo se justificarán cuando grupos de
+partículas necesiten física diferente, porque multiplicarían estado y cómputo.

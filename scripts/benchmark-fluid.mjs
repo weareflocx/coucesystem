@@ -15,6 +15,10 @@ const targetUrl = commandArguments.find((argument) => argument.startsWith("http"
   ?? "http://localhost:5173/?debug-engine=1";
 const sampleMilliseconds = Number(process.env.CAUCE_BENCHMARK_MS ?? 3000);
 const warmupMilliseconds = Number(process.env.CAUCE_BENCHMARK_WARMUP_MS ?? 1500);
+const chromaticRepetitions = Math.max(
+  1,
+  Math.min(7, Math.round(Number(process.env.CAUCE_BENCHMARK_REPETITIONS ?? 3)))
+);
 const requestedRemotePort = Number(process.env.CAUCE_BENCHMARK_PORT);
 const remotePort = Number.isInteger(requestedRemotePort) && requestedRemotePort > 0
   ? requestedRemotePort
@@ -168,8 +172,16 @@ const resetCases = [
   { label: "128k", particles: 131072 }
 ];
 
-if (!["all", "physics", "render", "reset", "switch"].includes(requestedSuite)) {
-  throw new Error(`Suite desconocida: ${requestedSuite}. Usa all, physics, render, reset o switch.`);
+const chromaticProfiles = [
+  { label: "Flow original", shape: 0 },
+  { label: "Esfera", shape: 1 }
+];
+
+if (!["all", "chromatic", "physics", "render", "reset", "reuse", "switch"].includes(requestedSuite)) {
+  throw new Error(
+    `Suite desconocida: ${requestedSuite}. ` +
+    "Usa all, chromatic, physics, render, reset, reuse o switch."
+  );
 }
 
 function roundedGpuMetric(gpu, key) {
@@ -190,6 +202,7 @@ async function sampleCase(client, benchmarkCase) {
     case: benchmarkCase.label,
     particles: benchmarkCase.particles,
     capacity: numberFrom(after, "capacity"),
+    geometry: after?.renderer?.activeGeometry ?? null,
     passes: numberFrom(after, "lastDispatchCount"),
     "reset mode": after?.resetMode ?? "unknown",
     "physical bytes": numberFrom(after?.memory, "physicalParticles"),
@@ -198,6 +211,8 @@ async function sampleCase(client, benchmarkCase) {
     "sphere surface indices": numberFrom(after?.renderer, "sphereSurfaceIndexCount"),
     "sphere shadow vertices": numberFrom(after?.renderer, "sphereShadowVertexCount"),
     "sphere shadow indices": numberFrom(after?.renderer, "sphereShadowIndexCount"),
+    "geometry vertices": numberFrom(after?.renderer, "geometryVertices"),
+    "geometry indices": numberFrom(after?.renderer, "geometryIndices"),
     "steps/s": Number((simulatedSteps / (elapsedMilliseconds / 1000)).toFixed(1)),
     "GPU compute ms": roundedGpuMetric(gpu, "computeFrameMs"),
     "GPU render ms": roundedGpuMetric(gpu, "renderFrameMs"),
@@ -273,6 +288,8 @@ function summarizeSamples(samples) {
     "sphere surface indices",
     "sphere shadow vertices",
     "sphere shadow indices",
+    "geometry vertices",
+    "geometry indices",
     "capacity",
     "physical bytes",
     "visual bytes",
@@ -284,7 +301,8 @@ function summarizeSamples(samples) {
     const summary = {
       case: first.case,
       particles: first.particles,
-      samples: group.length
+      samples: group.length,
+      geometry: first.geometry ?? null
     };
     for (const metric of metrics) {
       const value = median(group.map((sample) => sample[metric]));
@@ -327,6 +345,103 @@ try {
   }
 
   const results = [];
+  if (requestedSuite === "reuse") {
+    const reuseCases = [
+      { projectId: "flow-cauce", particles: 32768 },
+      { projectId: "chromatic-fluid", particles: 32768, shape: 0, color: 0, geometry: "flow-original" },
+      { projectId: "chromatic-fluid", particles: 65536, shape: 1, color: 1, geometry: "sphere" },
+      { projectId: "chromatic-fluid", particles: 131072, shape: 1, color: 3, geometry: "sphere" },
+      { projectId: "flow-cauce", particles: 32768 }
+    ];
+    for (const reuseCase of reuseCases) {
+      const { projectId, particles } = reuseCase;
+      await client.evaluate(`window.__CAUCE_DEBUG__.selectProject(${JSON.stringify(projectId)})`);
+      const reuseDeadline = Date.now() + 10000;
+      while (Date.now() < reuseDeadline) {
+        if (await client.evaluate(
+          `window.__CAUCE_DEBUG__.state().projectId === ${JSON.stringify(projectId)}`
+        )) break;
+        await delay(100);
+      }
+      if (!await client.evaluate(
+        `window.__CAUCE_DEBUG__.state().projectId === ${JSON.stringify(projectId)}`
+      )) {
+        throw new Error(`La aplicación no cambió a ${projectId}.`);
+      }
+      await client.evaluate(
+        `window.__CAUCE_DEBUG__.setParameter("particleCount", ${particles});` +
+        "window.__CAUCE_DEBUG__.setParameter(\"surfaceModel\", 0);" +
+        (projectId === "chromatic-fluid"
+          ? `window.__CAUCE_DEBUG__.setParameter("particleShape", ${reuseCase.shape});` +
+            `window.__CAUCE_DEBUG__.setParameter("colorBehavior", ${reuseCase.color});`
+          : "") +
+        "window.__CAUCE_DEBUG__.setPlaying(true);"
+      );
+      await delay(particles === 131072 ? 5000 : 3000);
+      const error = await client.evaluate(
+        "document.querySelector('#canvas-error:not([hidden])')?.textContent || null"
+      );
+      if (error) throw new Error(`${projectId}: ${error}`);
+      const diagnostics = await client.evaluate("window.__CAUCE_DEBUG__.diagnostics()", true);
+      if (diagnostics?.version !== "0.2") {
+        throw new Error(`${projectId}: no usa Cauce Fluid Engine 0.2.`);
+      }
+      if (diagnostics?.basePassCount !== 5 || diagnostics?.lastDispatchCount !== 5) {
+        throw new Error(`${projectId}: el solver base no conserva sus cinco dispatches.`);
+      }
+      if (!(diagnostics?.renderer?.renderCalls > 0)) {
+        throw new Error(`${projectId}: el renderer no produjo ningún fotograma.`);
+      }
+      if (
+        diagnostics?.activeParticleCount !== particles ||
+        diagnostics?.capacity < particles
+      ) {
+        throw new Error(
+          `${projectId}: solicitó ${particles} partículas pero activó ` +
+          `${diagnostics?.activeParticleCount ?? 0}/${diagnostics?.capacity ?? 0}.`
+        );
+      }
+      if (projectId === "chromatic-fluid") {
+        const consumer = diagnostics?.consumer;
+        if (
+          diagnostics?.visualMode !== "none" ||
+          diagnostics?.memory?.visualParticles !== 0 ||
+          consumer?.engineInstances !== 1 ||
+          consumer?.physicalBuffers !== 1 ||
+          consumer?.visualBuffers !== 0 ||
+          consumer?.renderLayers !== 1 ||
+          !(consumer?.renderedFrames > 0) ||
+          consumer?.sharesParticleBuffer !== true ||
+          consumer?.transparentParticles !== false ||
+          diagnostics?.renderer?.activeGeometry !== reuseCase.geometry
+        ) {
+          throw new Error(
+            "Chromatic Fluid duplicó física/representación, activó transparencia o reservó estado visual de Flow."
+          );
+        }
+      } else if (
+        diagnostics?.visualMode !== "flow" ||
+        !(diagnostics?.memory?.visualParticles > 0)
+      ) {
+        throw new Error("Flow Cauce perdió su extensión visual compatible.");
+      }
+      results.push({
+        case: `reuse → ${projectId} · ${Math.round(particles / 1024)}k`,
+        engine: diagnostics.version,
+        passes: diagnostics.lastDispatchCount,
+        particles,
+        capacity: diagnostics.capacity,
+        physicalBuffers: diagnostics.consumer?.physicalBuffers ?? 1,
+        visualBuffers: diagnostics.consumer?.visualBuffers ?? 1,
+        renderLayers: diagnostics.consumer?.renderLayers ?? 1,
+        renderedFrames: diagnostics.consumer?.renderedFrames ?? null,
+        renderCalls: diagnostics.renderer?.renderCalls ?? 0,
+        geometry: diagnostics.renderer?.activeGeometry ?? null,
+        physicalBytes: diagnostics.memory?.physicalParticles ?? 0,
+        visualBytes: diagnostics.memory?.visualParticles ?? 0
+      });
+    }
+  }
   if (requestedSuite === "switch") {
     await client.evaluate(`window.__CAUCE_DEBUG__.setAppearance({
       schemaVersion: 1,
@@ -346,7 +461,13 @@ try {
       texture: { type: "procedural", preset: "grain", scale: 5, strength: 0.42, motion: 0.6 }
     })`);
     await delay(1000);
-    for (const projectId of ["mobius-flow-1-1", "flow-cauce", "mobius-flow-1-1"]) {
+    for (const projectId of [
+      "mobius-flow-1-1",
+      "flow-cauce",
+      "chromatic-fluid",
+      "flow-cauce",
+      "mobius-flow-1-1"
+    ]) {
       await client.evaluate(`window.__CAUCE_DEBUG__.selectProject(${JSON.stringify(projectId)})`);
       const switchDeadline = Date.now() + 10000;
       while (Date.now() < switchDeadline) {
@@ -370,6 +491,45 @@ try {
         throw new Error(`${projectId}: la apariencia no sobrevivió al cambio de backend.`);
       }
       results.push({ case: `switch → ${projectId}`, ...state });
+    }
+  }
+  if (requestedSuite === "chromatic") {
+    await client.evaluate(`window.__CAUCE_DEBUG__.selectProject("chromatic-fluid")`);
+    const chromaticDeadline = Date.now() + 10000;
+    while (Date.now() < chromaticDeadline) {
+      if (await client.evaluate(
+        "window.__CAUCE_DEBUG__.state().projectId === 'chromatic-fluid'"
+      )) break;
+      await delay(100);
+    }
+    if (!await client.evaluate(
+      "window.__CAUCE_DEBUG__.state().projectId === 'chromatic-fluid'"
+    )) {
+      throw new Error("La aplicación no cambió a Chromatic Fluid.");
+    }
+    await client.evaluate("window.__CAUCE_DEBUG__.setPlaying(true)");
+    const chromaticCases = Array.from({ length: chromaticRepetitions }, (_, repetition) => {
+      const profiles = repetition % 2 === 0
+        ? chromaticProfiles
+        : [...chromaticProfiles].reverse();
+      const particleCounts = repetition % 2 === 0
+        ? [32768, 65536, 131072]
+        : [131072, 65536, 32768];
+      return profiles.flatMap((profile) => particleCounts.map((particles) => ({
+        ...profile,
+        particles,
+        label: `${profile.label} · ${Math.round(particles / 1024)}k`
+      })));
+    }).flat();
+    for (const benchmarkCase of chromaticCases) {
+      await client.evaluate(
+        `window.__CAUCE_DEBUG__.setParameter("particleCount", ${benchmarkCase.particles});` +
+        `window.__CAUCE_DEBUG__.setParameter("particleShape", ${benchmarkCase.shape});` +
+        "window.__CAUCE_DEBUG__.setParameter(\"surfaceModel\", 0);" +
+        "window.__CAUCE_DEBUG__.setParameter(\"colorBehavior\", 0);" +
+        "window.__CAUCE_DEBUG__.setPlaying(true);"
+      );
+      results.push(await sampleValidCase(client, benchmarkCase));
     }
   }
   if (requestedSuite === "all" || requestedSuite === "physics") {
@@ -414,13 +574,16 @@ try {
   }
 
   const diagnostics = await client.evaluate("window.__CAUCE_DEBUG__.diagnostics()", true);
-  const summary = requestedSuite === "switch" ? results : summarizeSamples(results);
+  const summary = requestedSuite === "switch" || requestedSuite === "reuse"
+    ? results
+    : summarizeSamples(results);
   console.table(summary);
   console.log(JSON.stringify({
     url: targetUrl,
     suite: requestedSuite,
     sampleMilliseconds,
     warmupMilliseconds,
+    chromaticRepetitions,
     engine: {
       version: diagnostics?.version,
       gridSize: diagnostics?.gridSize,

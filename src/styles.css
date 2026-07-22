@@ -269,6 +269,20 @@ p {
   gap: 0.12rem;
 }
 
+.inspector-control-subheading {
+  margin: 0.72rem 0 0.08rem;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.inspector-control-subheading:first-child {
+  margin-top: 0.22rem;
+}
+
 .parameter-control {
   display: grid;
   grid-template-columns: minmax(5.9rem, 0.85fr) minmax(4.2rem, 1fr) auto;

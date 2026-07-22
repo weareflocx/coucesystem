@@ -5,7 +5,8 @@ export function clamp(value, minimum, maximum) {
 }
 
 export function positiveModulo(value, modulus) {
-  return ((value % modulus) + modulus) % modulus;
+  const remainder = value % modulus;
+  return remainder < 0 ? remainder + modulus : remainder;
 }
 
 export function createRandom(seed) {

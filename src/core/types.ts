@@ -199,8 +199,9 @@ export interface RangeControlDefinition {
   hidden?: boolean;
   timeMode?: PlaybackMode;
   inspectorSection?: InspectorControlSection;
+  subsection?: string;
   advanced?: boolean;
-  visibleWhen?: { key: string; equals: number };
+  visibleWhen?: { key: string; equals?: number; notEquals?: number };
   options?: Array<{ value: number; label: string; description?: string }>;
 }
 
@@ -255,4 +256,5 @@ export interface ProjectDefinition {
   ): ProjectRenderer | Promise<ProjectRenderer>;
   toSvg?(frame: ProjectFrame): string;
   toSvgColorMesh?(frame: ProjectFrame): string;
+  toSvgPreview?(frame: ProjectFrame): string;
 }

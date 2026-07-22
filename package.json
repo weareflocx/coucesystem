@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && tsc -p tsconfig.netlify.json && vite build",
     "test:appearance": "node scripts/verify-appearance.mjs",
+    "test:fluid-reuse": "node scripts/verify-fluid-consumers.mjs",
     "test:mobius": "node scripts/verify-mobius.mjs",
     "benchmark:fluid": "node scripts/benchmark-fluid.mjs",
     "preview": "vite preview"
