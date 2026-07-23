@@ -16,6 +16,7 @@ import {
 import {
   createMobiusSurfaceGeometry,
   createMobiusVolumeGeometry,
+  mobiusFlow11LoopTime,
   mobiusFlow11Project
 } from "../src/projects/mobius-flow-1-1.js";
 
@@ -75,6 +76,26 @@ for (const parameters of [
 }
 
 assert.equal(mobiusFlow11Project.rendererVectorPreview, true);
+assert.deepEqual(
+  mobiusFlow11Project.controls.find((control) => control.key === "loopPhase"),
+  {
+    key: "loopPhase",
+    label: "Inicio del bucle",
+    min: 0,
+    max: 0.999999,
+    step: 0.001,
+    defaultValue: 0,
+    digits: 3,
+    hidden: true
+  }
+);
+assert.equal(
+  mobiusFlow11LoopTime({ time: 0.25, parameters: { loopPhase: 0.4 } }),
+  0.65
+);
+assert.ok(
+  Math.abs(mobiusFlow11LoopTime({ time: 0.8, parameters: { loopPhase: 0.4 } }) - 0.2) < 1e-12
+);
 
 for (const distribution of [0, 1, 2, 3]) {
   for (const halfTwists of [1, 3, 5, 7, 9, 11, 13, 15]) {

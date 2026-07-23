@@ -25,6 +25,8 @@ Los extremos ampliados de forma básica abren una zona creativa: cuando la anchu
 
 La distribución de torsión puede ser uniforme, localizada, doble u ondulada. Las tres últimas exponen posición, extensión e intensidad. Internamente todas producen una progresión normalizada, monótona y con la misma torsión total: cambiar la distribución modifica dónde gira la cinta, no su topología.
 
+El inicio del bucle se puede fijar en cualquier posición de la línea de tiempo con el icono de bandera del footer. El valor se guarda como `loopPhase`, se aplica al preview 3D y a las dos variantes SVG, y los guardados anteriores mantienen el inicio original (`0%`) si no lo tenían.
+
 `Fase`, `Posición` y `Concentración` dejan de ser el modelo público anterior. Los proyectos guardados siguen cargando: `width` se migra a anchura total y `twistConcentration` se traduce a distribución localizada e intensidad. Los parámetros heredados necesarios para reproducir el resultado permanecen ocultos.
 
 ## Representación

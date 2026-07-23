@@ -30,6 +30,13 @@ import {
 const PROJECT_ID = "mobius-flow-1-1";
 const MAX_SIDE_CURRENTS = 17;
 
+export function mobiusFlow11LoopTime(frame) {
+  return positiveModulo(
+    frame.time + parameter(frame, "loopPhase", 0),
+    1
+  );
+}
+
 export function createMobiusSurfaceGeometry(THREE, tessellation) {
   const vertexCount = tessellation.vertexCount;
   const positions = new Float32Array(vertexCount * 3);
@@ -401,7 +408,7 @@ async function createMobiusRenderer(canvas) {
 
   function render(frame) {
     if (disposed) return;
-    const cycle = positiveModulo(frame.time, 1) * TAU;
+    const cycle = mobiusFlow11LoopTime(frame) * TAU;
     const appearance = appearanceParameters(frame);
 
     backgroundColor.set(frame.palette.background);
@@ -756,7 +763,7 @@ function createVectorCurrents(frame, cycle, shape, tessellation, project) {
 }
 
 function createVectorSvg(frame, colorMesh) {
-  const cycle = positiveModulo(frame.time, 1) * TAU;
+  const cycle = mobiusFlow11LoopTime(frame) * TAU;
   const shape = mobiusShape(frame);
   const tessellation = mobiusVectorTessellation(frame, shape);
   const project = createMobiusProjector(frame, cycle);
@@ -814,6 +821,7 @@ export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDef
   viewControls: true,
   rendererVectorPreview: true,
   controls: [
+    { key: "loopPhase", label: "Inicio del bucle", min: 0, max: 0.999999, step: 0.001, defaultValue: 0, digits: 3, hidden: true },
     { key: "renderMode", label: "Representación", min: 0, max: 2, step: 1, defaultValue: 1, digits: 0, options: [
       { value: 0, label: "Marca plana", description: "Una tinta, sin corrientes ni lectura material." },
       { value: 1, label: "Sólido", description: "Superficie iluminada con volumen visual." },
@@ -874,6 +882,7 @@ export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDef
     { key: "textureMotion", label: "Movimiento de textura", min: -4, max: 4, step: 1, defaultValue: 1, digits: 0, group: "appearance" }
   ],
   defaults: {
+    loopPhase: 0,
     currents: 11,
     renderMode: 1,
     majorRadius: 1,
