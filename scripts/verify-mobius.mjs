@@ -9,8 +9,8 @@ import {
 import {
   createMobiusVolumeIndices,
   MOBIUS_MAX_SURFACE_SEGMENTS,
-  mobiusPreviewTessellation,
   mobiusTessellation,
+  mobiusVectorTessellation,
   writeMobiusVolumePositions
 } from "../src/projects/mobius-geometry.js";
 import {
@@ -35,6 +35,46 @@ assert.equal(
   mobiusFlow11Project.controls.find((control) => control.key === "halfTwists")?.max,
   15
 );
+for (const [key, min, max] of [
+  ["majorRadius", 0.55, 1.9],
+  ["bandWidth", 0.24, 1.6],
+  ["ellipticity", 0.6, 1.55],
+  ["flattening", 0.35, 1.75]
+]) {
+  const control = mobiusFlow11Project.controls.find((candidate) => candidate.key === key);
+  assert.deepEqual(
+    { min: control?.min, max: control?.max },
+    { min, max },
+    `range changed unexpectedly for ${key}`
+  );
+}
+
+for (const parameters of [
+  { majorRadius: 0.55, bandWidth: 1.6, ellipticity: 0.6, flattening: 0.35 },
+  { majorRadius: 1.9, bandWidth: 0.24, ellipticity: 1.55, flattening: 1.75 }
+]) {
+  const frame = {
+    width: 1000,
+    height: 1000,
+    seed: 6437,
+    elapsedTime: 0,
+    parameters: { ...parameters, halfTwists: 9 }
+  };
+  const shape = mobiusShape(frame);
+  for (let step = 0; step < 128; step += 1) {
+    const u = TAU * step / 128;
+    assert.ok(sampleAnimatedMobiusPoint(frame, u, 0.75, 0, shape).point.every(Number.isFinite));
+  }
+  assert.ok(
+    distance(
+      sampleAnimatedMobiusPoint(frame, 0, -0.75, 0, shape).point,
+      sampleAnimatedMobiusPoint(frame, TAU, 0.75, 0, shape).point
+    ) < 1e-5,
+    "creative shape range broke Möbius closure"
+  );
+}
+
+assert.equal(mobiusFlow11Project.rendererVectorPreview, true);
 
 for (const distribution of [0, 1, 2, 3]) {
   for (const halfTwists of [1, 3, 5, 7, 9, 11, 13, 15]) {
@@ -253,31 +293,76 @@ const svgFrame = {
   }
 };
 const svgShape = mobiusShape(svgFrame);
-const svgTessellation = mobiusTessellation(svgFrame, svgShape);
-const svgPreviewTessellation = mobiusPreviewTessellation(svgFrame, svgShape);
+const svgTessellation = mobiusVectorTessellation(svgFrame, svgShape);
 const svg = mobiusFlow11Project.toSvg(svgFrame);
 assert.equal(
   (svg.match(/<path /g) ?? []).length,
   svgTessellation.surfaceSegments * svgTessellation.widthSegments
 );
-assert.doesNotMatch(svg, /NaN|Infinity|undefined/);
-assert.ok(svgPreviewTessellation.surfaceSegments <= 320);
-assert.ok(svgPreviewTessellation.surfaceSegments <= svgTessellation.surfaceSegments);
-assert.ok(svgPreviewTessellation.widthSegments <= svgTessellation.widthSegments);
-const svgPreview = mobiusFlow11Project.toSvgPreview(svgFrame);
 assert.equal(
-  (svgPreview.match(/<path /g) ?? []).length,
-  svgPreviewTessellation.surfaceSegments * svgPreviewTessellation.widthSegments
+  (svg.match(/M-?\d/g) ?? []).length,
+  svgTessellation.surfaceSegments * svgTessellation.widthSegments
 );
-assert.doesNotMatch(svgPreview, /NaN|Infinity|undefined/);
-const movingSvgPreview = mobiusFlow11Project.toSvgPreview({
+assert.match(svg, /fill-rule="nonzero"/);
+assert.doesNotMatch(svg, /<linearGradient|stroke=/);
+assert.doesNotMatch(svg, /NaN|Infinity|undefined/);
+const movingFlatSvg = mobiusFlow11Project.toSvg({
   ...svgFrame,
   time: 0.43,
   elapsedTime: 3.01
 });
-assert.notEqual(movingSvgPreview, svgPreview);
+assert.notEqual(movingFlatSvg, svg);
+assert.equal(
+  (movingFlatSvg.match(/<path /g) ?? []).length,
+  svgTessellation.surfaceSegments * svgTessellation.widthSegments
+);
+assert.equal(
+  (movingFlatSvg.match(/M-?\d/g) ?? []).length,
+  (svg.match(/M-?\d/g) ?? []).length
+);
+const colorSvg = mobiusFlow11Project.toSvgColorMesh(svgFrame);
+assert.equal(
+  (colorSvg.match(/<path /g) ?? []).length,
+  svgTessellation.surfaceSegments * svgTessellation.widthSegments
+);
+const movingColorSvg = mobiusFlow11Project.toSvgColorMesh({
+  ...svgFrame,
+  time: 0.43,
+  elapsedTime: 3.01
+});
+assert.notEqual(movingColorSvg, colorSvg);
+
+const flatVectorTessellation = mobiusVectorTessellation({
+  width: 1920,
+  height: 1080,
+  parameters: { profileMode: 0, thickness: 0.18 }
+});
+const crownedVectorTessellation = mobiusVectorTessellation({
+  width: 1920,
+  height: 1080,
+  parameters: { profileMode: 1 }
+});
+const foldedVectorTessellation = mobiusVectorTessellation({
+  width: 1920,
+  height: 1080,
+  parameters: { profileMode: 2 }
+});
+const corrugatedVectorTessellation = mobiusVectorTessellation({
+  width: 1920,
+  height: 1080,
+  parameters: { profileMode: 3, profileFrequency: 7 }
+});
+assert.equal(flatVectorTessellation.widthSegments, 1);
+assert.equal(crownedVectorTessellation.widthSegments, 8);
+assert.equal(foldedVectorTessellation.widthSegments, 2);
+assert.equal(corrugatedVectorTessellation.widthSegments, 42);
+assert.equal(
+  flatVectorTessellation.surfaceSegments,
+  mobiusTessellation({ width: 1920, height: 1080, parameters: { profileMode: 0 } }).surfaceSegments
+);
 
 console.log(
   "Möbius geometry verified: 1–15 half-twists, monotone distributions, " +
-  "seam-compatible profiles and volume, adaptive/live SVG tessellation, legacy parameters and SVG parity."
+  "seam-compatible profiles and volume, depth-ordered flat SVG, " +
+  "profile-adaptive color mesh, GPU vector preview contract and legacy parameters."
 );

@@ -29,6 +29,8 @@ No existe una única salida transparente con compatibilidad universal. La export
 
 La ruta del navegador usa Mediabunny sobre WebCodecs y renderiza en un `OffscreenCanvas` separado. Los perfiles transparentes solicitan `alpha: "keep"`; los MP4 opacos usan AVC con `alpha: "discard"`. No se asume compatibilidad: la interfaz comprueba el codec antes de empezar.
 
+Los proyectos con `toSvg(frame)` pueden seleccionar `SVG plano` como fuente visual del vídeo. Cada fotograma se genera en un tiempo determinista del loop, se rasteriza a la resolución exacta del formato y entra en el mismo codificador que el render completo. El resultado conserva silueta, tinta plana, encuadre y transparencia del SVG sin grabar la interfaz ni depender de la cadencia de preview.
+
 CapCut no interpreta de forma fiable el canal alpha del WebM VP9. Para ese destino, Studio reutiliza el WebM como intermedio y un endpoint local fijo lo convierte con FFmpeg a ProRes 4444 (`prores_ks`, perfil 4, `yuva444p10le`). El endpoint no admite argumentos arbitrarios, limita la entrada a 512 MB, usa archivos temporales aislados y los elimina al terminar. Esta conversión solo está disponible en el servidor de desarrollo local; el build estático conserva los otros tres perfiles.
 
 ## Fotograma PNG — implementado

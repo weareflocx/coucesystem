@@ -9,6 +9,7 @@ import {
   svgGradientDefinition
 } from "./shared.js";
 import { compositionMetrics } from "./composition.js";
+import { createMobiusProjector } from "./mobius-projection.js";
 import {
   MOBIUS_MOTION_MODES,
   MOBIUS_PROFILE_MODES,
@@ -21,8 +22,8 @@ import {
 import {
   createMobiusSurfaceIndices,
   createMobiusVolumeIndices,
-  mobiusPreviewTessellation,
   mobiusTessellation,
+  mobiusVectorTessellation,
   writeMobiusVolumePositions
 } from "./mobius-geometry.js";
 
@@ -102,7 +103,15 @@ function writeAppearanceColor(
   target[offset + 2] = blue + (backgroundColor.b - blue) * sample.textureDim;
 }
 
-function updateSurfaceGeometry(geometry, frame, cycle, colors, shape, tessellation) {
+function updateSurfaceGeometry(
+  geometry,
+  frame,
+  cycle,
+  colors,
+  shape,
+  tessellation,
+  updateNormals = true
+) {
   const positions = geometry.getAttribute("position").array;
   const colorValues = geometry.getAttribute("color").array;
   let offset = 0;
@@ -145,7 +154,7 @@ function updateSurfaceGeometry(geometry, frame, cycle, colors, shape, tessellati
 
   geometry.getAttribute("position").needsUpdate = true;
   geometry.getAttribute("color").needsUpdate = true;
-  geometry.computeVertexNormals();
+  if (updateNormals) geometry.computeVertexNormals();
   return { shape, cycle, tessellation };
 }
 
@@ -330,6 +339,14 @@ async function createMobiusRenderer(canvas) {
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1
   });
+  const vectorMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    depthTest: true,
+    depthWrite: true,
+    toneMapped: false
+  });
   const surfaceMesh = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
   surfaceMesh.frustumCulled = false;
   group.add(surfaceMesh);
@@ -371,6 +388,7 @@ async function createMobiusRenderer(canvas) {
     stageBackground: null
   };
   let disposed = false;
+  let vectorPreviewEnabled = false;
 
   function resize(nextViewport) {
     viewport = { ...nextViewport };
@@ -403,8 +421,11 @@ async function createMobiusRenderer(canvas) {
       renderMode
     };
     const shape = mobiusShape(frame);
+    const renderShape = vectorPreviewEnabled && shape.thickness > 0.0001
+      ? { ...shape, thickness: 0 }
+      : shape;
     const requestedTessellation = mobiusTessellation(frame, shape);
-    const requestedGeometryMode = shape.thickness > 0.0001 ? "volume" : "surface";
+    const requestedGeometryMode = renderShape.thickness > 0.0001 ? "volume" : "surface";
     if (
       requestedTessellation.signature !== activeTessellation.signature ||
       requestedGeometryMode !== activeGeometryMode
@@ -428,7 +449,7 @@ async function createMobiusRenderer(canvas) {
           frame,
           cycle,
           colors,
-          shape,
+          renderShape,
           activeTessellation
         )
       : updateSurfaceGeometry(
@@ -436,8 +457,9 @@ async function createMobiusRenderer(canvas) {
           frame,
           cycle,
           colors,
-          shape,
-          activeTessellation
+          renderShape,
+          activeTessellation,
+          !vectorPreviewEnabled
         );
     updateCurrentGeometry(currentGeometry, frame, surface, colors);
 
@@ -492,6 +514,7 @@ async function createMobiusRenderer(canvas) {
     }
 
     surfaceMaterial.color.set(renderMode === 0 ? frame.palette.foreground : 0xffffff);
+    vectorMaterial.color.set(0xffffff);
     surfaceMaterial.vertexColors = true;
     surfaceMaterial.roughness = renderMode === 2
       ? parameter(frame, "roughness", 0.72)
@@ -538,107 +561,25 @@ async function createMobiusRenderer(canvas) {
     renderer.setScissorTest(false);
   }
 
+  function setPreviewMode(mode) {
+    vectorPreviewEnabled = mode === "vector";
+    surfaceMesh.material = vectorPreviewEnabled ? vectorMaterial : surfaceMaterial;
+    currentMaterial.depthTest = !vectorPreviewEnabled;
+    currentMaterial.needsUpdate = true;
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
     surfaceGeometry.dispose();
     currentGeometry.dispose();
     surfaceMaterial.dispose();
+    vectorMaterial.dispose();
     currentMaterial.dispose();
     renderer.dispose();
   }
 
-  return { resize, render, dispose };
-}
-
-function normalizeVector(x, y, z) {
-  const length = Math.hypot(x, y, z) || 1;
-  return [x / length, y / length, z / length];
-}
-
-function createVectorProjector(frame, cycle) {
-  const tilt = parameter(frame, "tilt", 57) * Math.PI / 180;
-  const yaw = (
-    parameter(frame, "yaw", -14) +
-    parameter(frame, "precession", 3.5) * Math.sin(cycle)
-  ) * Math.PI / 180;
-  const rotation = parameter(frame, "rotation", -30) * Math.PI / 180;
-  const cosineTilt = Math.cos(tilt);
-  const sineTilt = Math.sin(tilt);
-  const cosineYaw = Math.cos(yaw);
-  const sineYaw = Math.sin(yaw);
-  const cosineRotation = Math.cos(rotation);
-  const sineRotation = Math.sin(rotation);
-
-  const view = frame.view ?? {};
-  const orbitYaw = (Number.isFinite(view.orbitYaw) ? view.orbitYaw : 0) * Math.PI / 180;
-  const orbitPitch = (Number.isFinite(view.orbitPitch) ? view.orbitPitch : 0) * Math.PI / 180;
-  const zoom = Number.isFinite(view.zoom) ? clamp(view.zoom, 0.35, 4) : 1;
-  const metrics = compositionMetrics(frame);
-  const formatDistance = metrics.aspect < 1
-    ? Math.pow(1 / metrics.aspect, 0.22)
-    : Math.pow(metrics.aspect, -0.06);
-  const distance = parameter(frame, "cameraDistance", 5.1) * formatDistance / zoom;
-  const target = [
-    -(Number.isFinite(view.panX) ? view.panX : 0) * 3,
-    (Number.isFinite(view.panY) ? view.panY : 0) * 3,
-    0
-  ];
-  const cosinePitch = Math.cos(orbitPitch);
-  const position = [
-    target[0] + Math.sin(orbitYaw) * cosinePitch * distance,
-    target[1] + Math.sin(orbitPitch) * distance,
-    target[2] + Math.cos(orbitYaw) * cosinePitch * distance
-  ];
-  const backward = normalizeVector(
-    position[0] - target[0],
-    position[1] - target[1],
-    position[2] - target[2]
-  );
-  const right = normalizeVector(backward[2], 0, -backward[0]);
-  const up = [
-    backward[1] * right[2] - backward[2] * right[1],
-    backward[2] * right[0] - backward[0] * right[2],
-    backward[0] * right[1] - backward[1] * right[0]
-  ];
-  const perspectiveScale = 1 / Math.tan(parameter(frame, "fov", 38) * Math.PI / 360);
-  const projection = Math.round(clamp(parameter(frame, "projection", 0), 0, 1));
-  const orthographicHalfHeight = 2.9 / zoom;
-  const orthographicHalfWidth = orthographicHalfHeight * metrics.aspect;
-
-  return function project(point) {
-    const [x, y, z] = point;
-    // Matches THREE.Euler's XYZ rotation used by the preview renderer.
-    const worldX = cosineYaw * cosineRotation * x - cosineYaw * sineRotation * y + sineYaw * z;
-    const worldY = (
-      (cosineTilt * sineRotation + sineTilt * cosineRotation * sineYaw) * x +
-      (cosineTilt * cosineRotation - sineTilt * sineRotation * sineYaw) * y -
-      sineTilt * cosineYaw * z
-    );
-    const worldZ = (
-      (sineTilt * sineRotation - cosineTilt * cosineRotation * sineYaw) * x +
-      (sineTilt * cosineRotation + cosineTilt * sineRotation * sineYaw) * y +
-      cosineTilt * cosineYaw * z
-    );
-    const relativeX = worldX - position[0];
-    const relativeY = worldY - position[1];
-    const relativeZ = worldZ - position[2];
-    const cameraX = relativeX * right[0] + relativeY * right[1] + relativeZ * right[2];
-    const cameraY = relativeX * up[0] + relativeY * up[1] + relativeZ * up[2];
-    const cameraZ = relativeX * backward[0] + relativeY * backward[1] + relativeZ * backward[2];
-    const depth = -cameraZ;
-    const projectedX = projection === 1
-      ? cameraX / orthographicHalfWidth
-      : perspectiveScale * cameraX / (Math.max(0.0001, depth) * metrics.aspect);
-    const projectedY = projection === 1
-      ? cameraY / orthographicHalfHeight
-      : perspectiveScale * cameraY / Math.max(0.0001, depth);
-    return {
-      x: (projectedX + 1) * frame.width * 0.5,
-      y: (1 - projectedY) * frame.height * 0.5,
-      depth
-    };
-  };
+  return { resize, render, setPreviewMode, dispose };
 }
 
 function projectedPoint(frame, u, normalizedV, cycle, shape, motion, project) {
@@ -649,6 +590,17 @@ function projectedPoint(frame, u, normalizedV, cycle, shape, motion, project) {
 
 function pointCommand(point, command = "L") {
   return `${command}${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+}
+
+function compoundPolygonPath(points) {
+  let signedArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const next = points[(index + 1) % points.length];
+    signedArea += point.x * next.y - next.x * point.y;
+  }
+  const ordered = signedArea >= 0 ? points : [...points].reverse();
+  return ordered.map((point, index) => pointCommand(point, index === 0 ? "M" : "L")).join("") + "Z";
 }
 
 function createVectorSurface(frame, cycle, shape, tessellation, project, colorAt = null) {
@@ -683,24 +635,32 @@ function createVectorSurface(frame, cycle, shape, tessellation, project, colorAt
       cells.push({
         gradientId: colorAt ? `mobius-flow-1-1-band-${uIndex}` : null,
         depth: points.reduce((sum, point) => sum + point.depth, 0) / points.length,
-        path: `${pointCommand(points[0], "M")}${pointCommand(points[1])}${pointCommand(points[2])}${pointCommand(points[3])}Z`
+        path: compoundPolygonPath(points)
       });
     }
   }
-  const middle = Math.round(tessellation.widthSegments * 0.5);
-  const definition = colorAt
-    ? `<defs>${Array.from({ length: tessellation.surfaceSegments }, (_, uIndex) => {
-        const start = rows[uIndex][middle];
-        const end = rows[uIndex + 1][middle];
-        return `<linearGradient id="mobius-flow-1-1-band-${uIndex}" gradientUnits="userSpaceOnUse" color-interpolation="linearRGB" x1="${start.x.toFixed(2)}" y1="${start.y.toFixed(2)}" x2="${end.x.toFixed(2)}" y2="${end.y.toFixed(2)}"><stop offset="0" stop-color="${colorAt(uIndex / tessellation.surfaceSegments)}"/><stop offset="1" stop-color="${colorAt((uIndex + 1) / tessellation.surfaceSegments)}"/></linearGradient>`;
-      }).join("")}</defs>`
-    : "";
+  // The flat export is rasterized from SVG without a depth buffer. Keeping
+  // every projected cell as its own path lets the painter's order reproduce
+  // the visibility of the vector preview; a single compound path can cancel
+  // winding in self-overlapping Möbius projections and expose false holes.
   cells.sort((a, b) => b.depth - a.depth);
+  if (!colorAt) {
+    return {
+      definition: "",
+      paths: cells.map((cell) => `<path d="${cell.path}"/>`).join("")
+    };
+  }
+  const middle = Math.round(tessellation.widthSegments * 0.5);
+  const definition = `<defs>${Array.from({ length: tessellation.surfaceSegments }, (_, uIndex) => {
+    const start = rows[uIndex][middle];
+    const end = rows[uIndex + 1][middle];
+    return `<linearGradient id="mobius-flow-1-1-band-${uIndex}" gradientUnits="userSpaceOnUse" color-interpolation="linearRGB" x1="${start.x.toFixed(2)}" y1="${start.y.toFixed(2)}" x2="${end.x.toFixed(2)}" y2="${end.y.toFixed(2)}"><stop offset="0" stop-color="${colorAt(uIndex / tessellation.surfaceSegments)}"/><stop offset="1" stop-color="${colorAt((uIndex + 1) / tessellation.surfaceSegments)}"/></linearGradient>`;
+  }).join("")}</defs>`;
   return {
     definition,
-    paths: cells.map((cell) => cell.gradientId
-      ? `<path d="${cell.path}" fill="url(#${cell.gradientId})" stroke="url(#${cell.gradientId})"/>`
-      : `<path d="${cell.path}"/>`).join("")
+    paths: cells.map((cell) =>
+      `<path d="${cell.path}" fill="url(#${cell.gradientId})" stroke="url(#${cell.gradientId})"/>`
+    ).join("")
   };
 }
 
@@ -795,16 +755,14 @@ function createVectorCurrents(frame, cycle, shape, tessellation, project) {
   return paths.join("");
 }
 
-function createVectorSvg(frame, colorMesh, preview = false) {
+function createVectorSvg(frame, colorMesh) {
   const cycle = positiveModulo(frame.time, 1) * TAU;
   const shape = mobiusShape(frame);
-  const tessellation = preview
-    ? mobiusPreviewTessellation(frame, shape)
-    : mobiusTessellation(frame, shape);
-  const project = createVectorProjector(frame, cycle);
+  const tessellation = mobiusVectorTessellation(frame, shape);
+  const project = createMobiusProjector(frame, cycle);
   const renderMode = Math.round(clamp(parameter(frame, "renderMode", 1), 0, 2));
   const appearance = appearanceParameters(frame);
-  const gradient = renderMode === 0
+  const gradient = !colorMesh || renderMode === 0
     ? { definition: "", paint: frame.palette.foreground }
     : svgGradientDefinition(frame, appearance, "mobius-flow-1-1-gradient");
   const surface = createVectorSurface(
@@ -815,7 +773,7 @@ function createVectorSvg(frame, colorMesh, preview = false) {
     project,
     colorMesh ? createMeshColorSampler(frame, appearance) : null
   );
-  const currents = renderMode === 0
+  const currents = !colorMesh || renderMode === 0
     ? ""
     : createVectorCurrents(frame, cycle, shape, tessellation, project);
   const strokeWidth = 1.1 * Math.min(frame.width, frame.height) / 500;
@@ -825,7 +783,7 @@ function createVectorSvg(frame, colorMesh, preview = false) {
   const title = colorMesh ? "Malla vectorial a color" : "Vector plano";
   const surfaceAttributes = colorMesh
     ? "stroke-width=\"0.35\" stroke-linejoin=\"round\""
-    : `fill="${gradient.paint}" stroke="${gradient.paint}" stroke-width="0.35" stroke-linejoin="round"`;
+    : `fill="${gradient.paint}" fill-rule="nonzero"`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="0 0 ${frame.width} ${frame.height}"><title>Cauce 05.1 — Möbius Flow 1.1 · ${title}</title>${gradient.definition}${surface.definition}${background}<g ${surfaceAttributes}>${surface.paths}</g>${currents ? `<g fill="none" stroke="${gradient.paint}" stroke-width="${strokeWidth.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${currents}</g>` : ""}</svg>`;
 }
 
@@ -835,10 +793,6 @@ function toSvg(frame) {
 
 function toSvgColorMesh(frame) {
   return createVectorSvg(frame, true);
-}
-
-function toSvgPreview(frame) {
-  return createVectorSvg(frame, true, true);
 }
 
 export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDefinition} */ ({
@@ -858,6 +812,7 @@ export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDef
   preferredFormatKey: "square",
   preferredLoopSeconds: 7,
   viewControls: true,
+  rendererVectorPreview: true,
   controls: [
     { key: "renderMode", label: "Representación", min: 0, max: 2, step: 1, defaultValue: 1, digits: 0, options: [
       { value: 0, label: "Marca plana", description: "Una tinta, sin corrientes ni lectura material." },
@@ -865,10 +820,10 @@ export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDef
       { value: 2, label: "Material", description: "Acabado plástico con clearcoat." }
     ] },
     { key: "currents", label: "Líneas de corriente", min: 0, max: 35, step: 1, defaultValue: 11, digits: 0, inspectorSection: /** @type {"essential"} */ ("essential") },
-    { key: "majorRadius", label: "Radio", min: 0.65, max: 1.5, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
-    { key: "bandWidth", label: "Anchura total", min: 0.32, max: 1.44, step: 0.01, defaultValue: 0.92, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
-    { key: "ellipticity", label: "Ovalado", min: 0.72, max: 1.32, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
-    { key: "flattening", label: "Profundidad", min: 0.5, max: 1.35, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "majorRadius", label: "Radio", min: 0.55, max: 1.9, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "bandWidth", label: "Anchura total", min: 0.24, max: 1.6, step: 0.01, defaultValue: 0.92, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "ellipticity", label: "Ovalado", min: 0.6, max: 1.55, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
+    { key: "flattening", label: "Profundidad", min: 0.35, max: 1.75, step: 0.01, defaultValue: 1, digits: 2, inspectorSection: "shape", subsection: "Forma básica" },
     { key: "halfTwists", label: "Medias torsiones", min: 1, max: 15, step: 2, defaultValue: 1, digits: 0, inspectorSection: "shape", subsection: "Torsión" },
     { key: "handedness", label: "Lateralidad", min: -1, max: 1, step: 2, defaultValue: 1, digits: 0, inspectorSection: "shape", subsection: "Torsión", options: [
       { value: 1, label: "Derecha" },
@@ -966,6 +921,5 @@ export const mobiusFlow11Project = /** @type {import("../core/types").ProjectDef
   },
   createRenderer: createMobiusRenderer,
   toSvg,
-  toSvgColorMesh,
-  toSvgPreview
+  toSvgColorMesh
 });

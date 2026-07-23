@@ -887,6 +887,10 @@ input[type="color"]::-webkit-color-swatch {
   gap: 0.5rem;
 }
 
+.video-source-control {
+  grid-column: 1 / -1;
+}
+
 .inline-error {
   margin: 0;
   padding: 0.6rem 0.7rem;

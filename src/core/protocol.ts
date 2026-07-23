@@ -37,6 +37,10 @@ export type MainToWorkerMessage =
       visible: boolean;
     }
   | {
+      type: "preview-mode";
+      mode: "default" | "vector";
+    }
+  | {
       type: "export-svg";
       requestId: string;
       variant?: "flat" | "color-mesh";

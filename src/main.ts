@@ -65,7 +65,8 @@ import { createDefaultView, normalizeView, viewUsesDefaults } from "./core/view"
 import {
   checkVideoProfile,
   exportVideo,
-  type VideoProfile
+  type VideoProfile,
+  type VideoRenderSource
 } from "./core/video-export";
 import { exportProjectPng } from "./core/still-export";
 import { createPresetDownload, parseSharedPreset } from "./core/preset";
@@ -228,6 +229,8 @@ const loopStartValue = byId<HTMLOutputElement>("loop-start-value");
 const setLoopStartButton = byId<HTMLButtonElement>("set-loop-start-button");
 const resetLoopStartButton = byId<HTMLButtonElement>("reset-loop-start-button");
 const videoProfileSelect = byId<HTMLSelectElement>("video-profile-select");
+const videoRenderSourceSelect = byId<HTMLSelectElement>("video-render-source-select");
+const videoRenderSourceSvgFlat = byId<HTMLOptionElement>("video-render-source-svg-flat");
 const videoFpsSelect = byId<HTMLSelectElement>("video-fps-select");
 const exportVideoButton = byId<HTMLButtonElement>("export-video-button");
 const cancelVideoButton = byId<HTMLButtonElement>("cancel-video-button");
@@ -405,8 +408,7 @@ let resumeAfterScrub = false;
 let stageVisible = true;
 let vectorExportPreviewEnabled = false;
 let queuedVectorExportPreviewFrame = 0;
-let lastVectorExportPreviewTime = 0;
-const VECTOR_EXPORT_PREVIEW_INTERVAL_MS = 1000 / 12;
+let rendererPreviewMode: "default" | "vector" = "default";
 let rememberedGradientPaint: Extract<AppearanceStyle["paint"], { type: "gradient" }> | null = null;
 let currentTime = 0;
 let currentElapsedTime = 0;
@@ -2512,14 +2514,36 @@ function updateStaticUi(): void {
   const usesWebGlCanvas = project.backend === "three";
   const usesWebGpuCanvas = project.backend === "webgpu";
   const usesCanvas2d = !usesWebGlCanvas && !usesWebGpuCanvas;
+  const vectorPreviewSupported = typeof project.toSvgColorMesh === "function" &&
+    project.exportCapabilities?.svg !== false;
+  const liveVectorPreview = vectorExportPreviewEnabled &&
+    vectorPreviewSupported &&
+    state.playback.playing &&
+    project.rendererVectorPreview === true;
+  const exactVectorPreview = vectorExportPreviewEnabled &&
+    vectorPreviewSupported &&
+    !liveVectorPreview;
   canvas.classList.toggle("is-active", usesCanvas2d);
   threeCanvas.classList.toggle("is-active", usesWebGlCanvas);
   webgpuCanvas.classList.toggle("is-active", usesWebGpuCanvas);
-  canvas.setAttribute("aria-hidden", String(!usesCanvas2d || vectorExportPreviewEnabled));
-  threeCanvas.setAttribute("aria-hidden", String(!usesWebGlCanvas || vectorExportPreviewEnabled));
-  webgpuCanvas.setAttribute("aria-hidden", String(!usesWebGpuCanvas || vectorExportPreviewEnabled));
-  previewModeSwitch.hidden = typeof project.toSvgColorMesh !== "function" ||
-    project.exportCapabilities?.svg === false;
+  canvas.setAttribute("aria-hidden", String(!usesCanvas2d || exactVectorPreview));
+  threeCanvas.setAttribute("aria-hidden", String(!usesWebGlCanvas || exactVectorPreview));
+  webgpuCanvas.setAttribute("aria-hidden", String(!usesWebGpuCanvas || exactVectorPreview));
+  vectorExportPreview.hidden = !exactVectorPreview;
+  threeCanvas.setAttribute(
+    "aria-label",
+    liveVectorPreview
+      ? `Vista previa vectorial animada de ${project.name}`
+      : "Vista previa 3D animada del proyecto Cauce"
+  );
+  if (liveVectorPreview && vectorExportPreview.dataset.previewKind !== "gpu") {
+    vectorExportPreview.replaceChildren();
+    vectorExportPreview.dataset.previewKind = "gpu";
+    svgExportStatus.textContent =
+      "Vista vectorial GPU · pausa para comprobar el SVG exacto.";
+  }
+  previewModeSwitch.hidden = !vectorPreviewSupported;
+  syncRendererPreviewMode(liveVectorPreview ? "vector" : "default");
   playButton.disabled = false;
   updateViewportHud(project);
   updatePlaybackButton();
@@ -3973,7 +3997,19 @@ function updateVectorExportPreviewLayout(): void {
   vectorExportPreview.style.height = `${height}px`;
 }
 
-function renderVectorExportPreview(timestamp = performance.now()): void {
+function syncRendererPreviewMode(mode: "default" | "vector"): void {
+  if (rendererPreviewMode === mode) return;
+  rendererPreviewMode = mode;
+  post({ type: "preview-mode", mode });
+}
+
+function usesLiveRendererVectorPreview(project = getProject(state.projectId)): boolean {
+  return vectorExportPreviewEnabled &&
+    state.playback.playing &&
+    project.rendererVectorPreview === true;
+}
+
+function renderVectorExportPreview(): void {
   queuedVectorExportPreviewFrame = 0;
   if (!vectorExportPreviewEnabled) return;
   const project = getProject(state.projectId);
@@ -3981,31 +4017,15 @@ function renderVectorExportPreview(timestamp = performance.now()): void {
     setVectorExportPreview(false);
     return;
   }
-  const animated = state.playback.playing && typeof project.toSvgPreview === "function";
-  if (
-    animated &&
-    timestamp - lastVectorExportPreviewTime < VECTOR_EXPORT_PREVIEW_INTERVAL_MS
-  ) {
-    queuedVectorExportPreviewFrame = window.requestAnimationFrame(renderVectorExportPreview);
-    return;
-  }
-  lastVectorExportPreviewTime = timestamp;
+  if (usesLiveRendererVectorPreview(project)) return;
   try {
-    const exporter = animated ? project.toSvgPreview! : project.toSvgColorMesh;
-    vectorExportPreview.innerHTML = exporter(createCurrentProjectFrame());
+    vectorExportPreview.innerHTML = project.toSvgColorMesh(createCurrentProjectFrame());
     vectorExportPreview.setAttribute(
       "aria-label",
-      animated
-        ? `Previsualización animada del SVG de malla a color de ${project.name}`
-        : `Previsualización exacta del SVG de malla a color de ${project.name}`
+      `Previsualización exacta del SVG de malla a color de ${project.name}`
     );
-    const previewKind = animated ? "animated" : "exact";
-    if (vectorExportPreview.dataset.previewKind !== previewKind) {
-      vectorExportPreview.dataset.previewKind = previewKind;
-      svgExportStatus.textContent = animated
-        ? "Vista SVG animada · calidad de preview; la descarga conserva el detalle completo."
-        : "Vista SVG exacta · el fotograma coincide con la descarga.";
-    }
+    vectorExportPreview.dataset.previewKind = "exact";
+    svgExportStatus.textContent = "Vista SVG exacta · el fotograma coincide con la descarga.";
     updateVectorExportPreviewLayout();
   } catch (error) {
     setVectorExportPreview(false);
@@ -4016,7 +4036,11 @@ function renderVectorExportPreview(timestamp = performance.now()): void {
 }
 
 function scheduleVectorExportPreview(): void {
-  if (!vectorExportPreviewEnabled || queuedVectorExportPreviewFrame) return;
+  if (
+    !vectorExportPreviewEnabled ||
+    usesLiveRendererVectorPreview() ||
+    queuedVectorExportPreviewFrame
+  ) return;
   queuedVectorExportPreviewFrame = window.requestAnimationFrame(renderVectorExportPreview);
 }
 
@@ -4025,18 +4049,16 @@ function setVectorExportPreview(enabled: boolean): void {
   const supported = typeof project.toSvgColorMesh === "function" &&
     project.exportCapabilities?.svg !== false;
   vectorExportPreviewEnabled = enabled && supported;
-  vectorExportPreview.hidden = !vectorExportPreviewEnabled;
   previewMode3dButton.setAttribute("aria-pressed", String(!vectorExportPreviewEnabled));
   previewModeSvgButton.setAttribute("aria-pressed", String(vectorExportPreviewEnabled));
 
   if (vectorExportPreviewEnabled) {
-    lastVectorExportPreviewTime = 0;
     updateStaticUi();
     updateVectorExportPreviewLayout();
     scheduleVectorExportPreview();
-    appStatus.textContent = "Vista SVG activa: reproduce para comparar el movimiento vectorial.";
-    svgExportStatus.textContent = state.playback.playing
-      ? "Vista SVG animada · la descarga conserva el detalle completo."
+    appStatus.textContent = "Vista vectorial activa: reproduce para comparar el movimiento fluido.";
+    svgExportStatus.textContent = usesLiveRendererVectorPreview(project)
+      ? "Vista vectorial GPU · la descarga SVG conserva el detalle exacto."
       : "Vista SVG exacta · reproduce para verla en movimiento.";
     return;
   }
@@ -4045,7 +4067,6 @@ function setVectorExportPreview(enabled: boolean): void {
     window.cancelAnimationFrame(queuedVectorExportPreviewFrame);
     queuedVectorExportPreviewFrame = 0;
   }
-  lastVectorExportPreviewTime = 0;
   delete vectorExportPreview.dataset.previewKind;
   vectorExportPreview.replaceChildren();
   updateStaticUi();
@@ -4121,6 +4142,12 @@ function updateExportCapabilities(project: ProjectDefinition): ExportKind {
   }
 
   exportColorMeshButton.hidden = typeof project.toSvgColorMesh !== "function";
+  const supportsSvgFlatVideo = typeof project.toSvg === "function" &&
+    project.exportCapabilities?.svg !== false;
+  videoRenderSourceSvgFlat.disabled = !supportsSvgFlatVideo;
+  if (!supportsSvgFlatVideo && videoRenderSourceSelect.value === "svg-flat") {
+    videoRenderSourceSelect.value = "project";
+  }
   if (vectorExportPreviewEnabled && typeof project.toSvgColorMesh !== "function") {
     setVectorExportPreview(false);
   }
@@ -4142,6 +4169,7 @@ openExportDialogButton.addEventListener("click", () => {
     presetExportName.value = `${project.name} ${state.seed}`;
   }
   showExportPanel(updateExportCapabilities(project));
+  updateVideoExportDescription();
   exportDialog.showModal();
 });
 
@@ -4184,6 +4212,11 @@ const videoProfileDescriptions: Record<VideoProfile, string> = {
   "mp4-chroma": "H.264 con fondo verde puro para eliminarlo mediante clave de color."
 };
 
+const videoRenderSourceDescriptions: Record<VideoRenderSource, string> = {
+  project: "Render completo del proyecto, con su iluminación y material actuales.",
+  "svg-flat": "Rasteriza el SVG plano exacto en cada fotograma, sin iluminación, volumen ni malla visible."
+};
+
 function selectedVideoProfile(): VideoProfile {
   const value = videoProfileSelect.value;
   if (
@@ -4195,21 +4228,31 @@ function selectedVideoProfile(): VideoProfile {
   return "mp4-background";
 }
 
-videoProfileSelect.addEventListener("change", () => {
-  videoExportStatus.textContent = videoProfileDescriptions[selectedVideoProfile()];
-});
+function selectedVideoRenderSource(): VideoRenderSource {
+  return videoRenderSourceSelect.value === "svg-flat" ? "svg-flat" : "project";
+}
+
+function updateVideoExportDescription(): void {
+  const source = selectedVideoRenderSource();
+  videoExportStatus.textContent = `${videoRenderSourceDescriptions[source]} ${videoProfileDescriptions[selectedVideoProfile()]}`;
+}
+
+videoProfileSelect.addEventListener("change", updateVideoExportDescription);
+videoRenderSourceSelect.addEventListener("change", updateVideoExportDescription);
 
 exportVideoButton.addEventListener("click", async () => {
   if (videoExportController) return;
 
   const exportState = structuredClone(state);
   const profile = selectedVideoProfile();
+  const renderSource = selectedVideoRenderSource();
   const fps = Number(videoFpsSelect.value);
   const wasPlaying = state.playback.playing;
   if (wasPlaying) setPlaying(false);
   videoExportController = new AbortController();
   exportVideoButton.disabled = true;
   cancelVideoButton.disabled = false;
+  videoRenderSourceSelect.disabled = true;
   videoProfileSelect.disabled = true;
   videoFpsSelect.disabled = true;
   videoExportProgress.hidden = false;
@@ -4229,6 +4272,7 @@ exportVideoButton.addEventListener("click", async () => {
       state: exportState,
       fps,
       profile,
+      renderSource,
       imageField: currentImageField,
       signal: videoExportController.signal,
       onProgress(progress, phase) {
@@ -4251,6 +4295,7 @@ exportVideoButton.addEventListener("click", async () => {
     videoExportController = null;
     exportVideoButton.disabled = false;
     cancelVideoButton.disabled = true;
+    videoRenderSourceSelect.disabled = false;
     videoProfileSelect.disabled = false;
     videoFpsSelect.disabled = false;
     if (wasPlaying) setPlaying(true);

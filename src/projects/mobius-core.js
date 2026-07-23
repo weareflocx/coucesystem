@@ -153,9 +153,9 @@ export function mobiusShape(frame) {
   const center = positiveModulo(twistPosition / 360);
   const twistProgressLut = twistLut(distribution, center, twistExtent, twistIntensity);
   return {
-    majorRadius: clamp(finite(readParameter(parameters, "majorRadius", MOBIUS_SHAPE_DEFAULTS.majorRadius), 1), 0.65, 1.5),
-    bandWidth: clamp(finite(bandWidth, MOBIUS_SHAPE_DEFAULTS.bandWidth), 0.32, 1.44),
-    width: clamp(finite(bandWidth, MOBIUS_SHAPE_DEFAULTS.bandWidth) * 0.5, 0.16, 0.72),
+    majorRadius: clamp(finite(readParameter(parameters, "majorRadius", MOBIUS_SHAPE_DEFAULTS.majorRadius), 1), 0.55, 1.9),
+    bandWidth: clamp(finite(bandWidth, MOBIUS_SHAPE_DEFAULTS.bandWidth), 0.24, 1.6),
+    width: clamp(finite(bandWidth, MOBIUS_SHAPE_DEFAULTS.bandWidth) * 0.5, 0.12, 0.8),
     halfTwists: oddInteger(readParameter(parameters, "halfTwists", 1), 1, 15),
     handedness: readParameter(parameters, "handedness", 1) < 0 ? -1 : 1,
     twistPhase: finite(readParameter(parameters, "twistPhase", 0), 0) * Math.PI / 180,
@@ -165,8 +165,8 @@ export function mobiusShape(frame) {
     twistIntensity,
     twistProgressLut,
     twistDetail: twistDetail(twistProgressLut),
-    ellipticity: clamp(finite(readParameter(parameters, "ellipticity", 1), 1), 0.72, 1.32),
-    flattening: clamp(finite(readParameter(parameters, "flattening", 1), 1), 0.5, 1.35),
+    ellipticity: clamp(finite(readParameter(parameters, "ellipticity", 1), 1), 0.6, 1.55),
+    flattening: clamp(finite(readParameter(parameters, "flattening", 1), 1), 0.35, 1.75),
     widthVariation: clamp(finite(readParameter(parameters, "widthVariation", 0), 0), 0, 0.24),
     profileMode: Math.round(clamp(readParameter(parameters, "profileMode", 0), 0, 3)),
     profileAmount: clamp(readParameter(parameters, "profileAmount", 0), 0, 0.45),

@@ -14,12 +14,14 @@ La cinta usa la identificación Möbius `(u = 0, v) ≡ (u = 2π, -v)`. La propi
 
 Los controles de forma se organizan en cuatro grupos:
 
-- **Forma básica:** radio, anchura total, ovalado y profundidad.
+- **Forma básica:** radio (`0.55–1.90`), anchura total (`0.24–1.60`), ovalado (`0.60–1.55`) y profundidad (`0.35–1.75`).
 - **Torsión:** medias torsiones impares de `1` a `15`, lateralidad y distribución.
 - **Perfil de cinta:** plano, abombado, plegado o corrugado.
 - **Acabado geométrico:** grosor 3D y redondeo del borde.
 
 Las torsiones pares y las topologías no Möbius quedan fuera de esta versión.
+
+Los extremos ampliados de forma básica abren una zona creativa: cuando la anchura supera el radio, la cinta puede plegarse y solaparse sobre su centro. Esa combinación sigue siendo finita y renderizable, pero deja de representar una banda regular y produce siluetas florales o más tensas de forma deliberada.
 
 La distribución de torsión puede ser uniforme, localizada, doble u ondulada. Las tres últimas exponen posición, extensión e intensidad. Internamente todas producen una progresión normalizada, monótona y con la misma torsión total: cambiar la distribución modifica dónde gira la cinta, no su topología.
 
@@ -40,9 +42,11 @@ La teselación es automática. Parte de `192 × 24` y aumenta según:
 - grosor activo;
 - resolución de salida, con un máximo de `1024` tramos longitudinales para mantener el editor y el SVG manejables.
 
-El preview exacto y las dos exportaciones SVG llaman a `mobiusTessellation()` y a la misma parametrización. El SVG vectorial subdivide tanto el recorrido como la anchura, por lo que los perfiles y las torsiones localizadas no se reducen a un cuadrilátero por tramo. La malla de color conserva los gradientes; el vector plano conserva una sola tinta.
+El preview exacto y las dos exportaciones SVG usan la misma parametrización y conservan la resolución longitudinal de `mobiusTessellation()`. `mobiusVectorTessellation()` adapta únicamente la anchura: `1` tramo para plano, `8` para abombado, `2` para plegado y `max(12, frecuencia × 6)` para corrugado. La malla de color conserva los polígonos y gradientes que cada perfil necesita. El SVG plano emite las celdas como rutas independientes ordenadas por profundidad, sin strokes internos, corrientes ni gradientes: así evita que las auto-intersecciones de la proyección cancelen el relleno y generen huecos falsos.
 
-La comparación SVG tiene dos estados. En pausa genera el fotograma exacto con la teselación de descarga. Durante la reproducción usa la misma parametrización con una teselación temporal limitada a `320` tramos longitudinales y actualiza a un máximo de `12 fps`; así conserva el movimiento sin reconstruir decenas de miles de nodos SVG sesenta veces por segundo. La descarga nunca usa esta reducción.
+La comparación SVG tiene dos estados. En pausa genera el fotograma SVG exacto con la teselación de descarga. Durante la reproducción, el renderer Three cambia a un material vectorial sin iluminación, grosor ni sombras y conserva la misma geometría central, cámara y colores. Esta representación se mantiene en GPU a la cadencia normal del proyecto, sin reconstruir miles de nodos DOM en cada frame. La descarga nunca utiliza el material de preview.
+
+En `Exportar > Vídeo`, la fuente `SVG plano` rasteriza ese `toSvg()` exacto para cada fotograma del loop y lo codifica como MP4, WebM alpha o MOV alpha según el perfil elegido. El vídeo conserva una sola tinta, bordes limpios y ausencia de iluminación, grosor y malla visible; no es una grabación del canvas 3D.
 
 ## Movimiento
 

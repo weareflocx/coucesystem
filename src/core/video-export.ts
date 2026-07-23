@@ -18,10 +18,13 @@ export type VideoProfile =
   | "webm-alpha"
   | "mp4-chroma";
 
+export type VideoRenderSource = "project" | "svg-flat";
+
 export interface VideoExportOptions {
   state: EngineState;
   fps: number;
   profile: VideoProfile;
+  renderSource: VideoRenderSource;
   imageField?: ImageField | null;
   onProgress(progress: number, phase: string): void;
   signal: AbortSignal;
@@ -123,16 +126,77 @@ export async function checkVideoProfile(
   return { supported: true };
 }
 
+async function drawSvgFrame(
+  context: OffscreenCanvasRenderingContext2D,
+  source: string,
+  width: number,
+  height: number,
+  signal: AbortSignal
+): Promise<void> {
+  if (signal.aborted) throw new DOMException("Exportación cancelada.", "AbortError");
+  if (typeof Image === "undefined") {
+    throw new Error("Este navegador no puede rasterizar fotogramas SVG.");
+  }
+
+  const url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml" }));
+  const image = new Image();
+  image.decoding = "sync";
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        image.removeEventListener("load", handleLoad);
+        image.removeEventListener("error", handleError);
+        signal.removeEventListener("abort", handleAbort);
+      };
+      const handleLoad = (): void => {
+        cleanup();
+        resolve();
+      };
+      const handleError = (): void => {
+        cleanup();
+        reject(new Error("El navegador no pudo rasterizar el fotograma SVG plano."));
+      };
+      const handleAbort = (): void => {
+        cleanup();
+        image.src = "";
+        reject(new DOMException("Exportación cancelada.", "AbortError"));
+      };
+
+      image.addEventListener("load", handleLoad, { once: true });
+      image.addEventListener("error", handleError, { once: true });
+      signal.addEventListener("abort", handleAbort, { once: true });
+      image.src = url;
+    });
+    context.drawImage(image, 0, 0, width, height);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> {
-  const { state, fps, profile, imageField = null, onProgress, signal } = options;
+  const {
+    state,
+    fps,
+    profile,
+    renderSource,
+    imageField = null,
+    onProgress,
+    signal
+  } = options;
   const format = getOutputFormat(state.formatKey);
   const project = getProject(state.projectId);
   const transparent = isTransparentProfile(profile);
+  const svgFlat = renderSource === "svg-flat";
   const palette = profilePalette(profile, state.palette);
   const frameDuration = 1 / fps;
   const frameCount = Math.max(1, Math.round(state.playback.loopSeconds * fps));
   const canvas = new OffscreenCanvas(format.width, format.height);
-  const projectRenderer = project.createRenderer
+  if (svgFlat && (!project.toSvg || project.exportCapabilities?.svg === false)) {
+    throw new Error(`${project.index} · ${project.name} no ofrece vídeo SVG plano.`);
+  }
+
+  const projectRenderer = !svgFlat && project.createRenderer
     ? await project.createRenderer(canvas, {
         initialParticleCount: Number(state.parameters.particleCount) || undefined,
         initialSeed: state.seed,
@@ -143,10 +207,13 @@ async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> 
     ? null
     : canvas.getContext("2d", { alpha: transparent });
 
-  if (project.createRenderer && !projectRenderer) {
+  if (!svgFlat && project.createRenderer && !projectRenderer) {
     throw new Error("El proyecto no incluye un renderer exportable.");
   }
-  if (!projectRenderer && (!context || !project.render)) {
+  if (svgFlat && !context) {
+    throw new Error("No se pudo crear el lienzo para rasterizar el SVG plano.");
+  }
+  if (!svgFlat && !projectRenderer && (!context || !project.render)) {
     throw new Error("No se pudo crear el lienzo de exportación.");
   }
 
@@ -209,7 +276,18 @@ async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> 
         transparent,
         imageField
       };
-      if (projectRenderer) {
+      if (svgFlat && context && project.toSvg) {
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.globalAlpha = 1;
+        context.clearRect(0, 0, format.width, format.height);
+        await drawSvgFrame(
+          context,
+          project.toSvg(frame),
+          format.width,
+          format.height,
+          signal
+        );
+      } else if (projectRenderer) {
         projectRenderer.render(frame);
         await projectRenderer.flush?.();
       } else if (context && project.render) {
@@ -226,9 +304,13 @@ async function encodeFrames(options: VideoExportOptions): Promise<EncodedVideo> 
       const totalProgress = profile === "mov-alpha-capcut"
         ? renderProgress * 0.75
         : renderProgress;
-      onProgress(totalProgress, transparent
-        ? "Codificando fotogramas con alpha"
-        : "Codificando fotogramas");
+      onProgress(totalProgress, svgFlat
+        ? transparent
+          ? "Codificando SVG plano con alpha"
+          : "Codificando SVG plano"
+        : transparent
+          ? "Codificando fotogramas con alpha"
+          : "Codificando fotogramas");
 
       if (frameIndex % 4 === 0) {
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
@@ -286,14 +368,15 @@ async function convertToCapCutMov(
 }
 
 export async function exportVideo(options: VideoExportOptions): Promise<VideoExportResult> {
-  const { state, profile, signal, onProgress } = options;
+  const { state, profile, renderSource, signal, onProgress } = options;
   const format = getOutputFormat(state.formatKey);
   const project = getProject(state.projectId);
   const baseFilename = `cauce-${project.index}-${project.id}-${format.key}-${state.seed}`;
+  const renderSuffix = renderSource === "svg-flat" ? "-svg-flat" : "";
   const encoded = await encodeFrames(options);
 
   if (profile === "mov-alpha-capcut") {
-    const filename = `${baseFilename}-alpha-capcut.mov`;
+    const filename = `${baseFilename}${renderSuffix}-alpha-capcut.mov`;
     const blob = await convertToCapCutMov(
       encoded.blob,
       filename,
@@ -310,7 +393,7 @@ export async function exportVideo(options: VideoExportOptions): Promise<VideoExp
   };
   return {
     blob: encoded.blob,
-    filename: `${baseFilename}${suffixes[profile]}`,
+    filename: `${baseFilename}${renderSuffix}${suffixes[profile]}`,
     frameCount: encoded.frameCount
   };
 }

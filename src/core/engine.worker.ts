@@ -40,6 +40,7 @@ let lastNotification = 0;
 const FRAME_NOTIFICATION_INTERVAL_MS = 50;
 let diagnosticsEnabled = false;
 let fluidResetMode: CauceFluidResetMode = "legacy-cpu";
+let rendererPreviewMode: "default" | "vector" = "default";
 
 function post(message: WorkerToMainMessage): void {
   workerScope.postMessage(message);
@@ -105,6 +106,7 @@ function ensureProjectRenderer(project: ProjectDefinition): ProjectRenderer | nu
         return;
       }
       projectRenderer = renderer;
+      projectRenderer.setPreviewMode?.(rendererPreviewMode);
       projectRendererPromise = null;
       markDirty();
     })
@@ -374,6 +376,12 @@ workerScope.addEventListener("message", (event: MessageEvent<MainToWorkerMessage
           frameToken = null;
         }
         if (visible) markDirty();
+        break;
+      }
+      case "preview-mode": {
+        rendererPreviewMode = message.mode;
+        projectRenderer?.setPreviewMode?.(rendererPreviewMode);
+        markDirty();
         break;
       }
       case "export-svg": {

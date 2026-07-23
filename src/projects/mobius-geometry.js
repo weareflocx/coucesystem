@@ -37,24 +37,21 @@ export function mobiusTessellation(frame, shape = mobiusShape(frame)) {
   };
 }
 
-export function mobiusPreviewTessellation(frame, shape = mobiusShape(frame)) {
-  const exact = mobiusTessellation(frame, shape);
-  const surfaceSegments = Math.min(exact.surfaceSegments, 320);
-  const profileWidthSegments = shape.profileMode === 3
-    ? shape.profileFrequency * 2
-    : shape.profileMode === 0 ? 12 : 16;
-  const widthSegments = Math.min(
-    exact.widthSegments,
-    roundUp(Math.max(12, profileWidthSegments), 2)
-  );
+export function mobiusVectorTessellation(frame, shape = mobiusShape(frame)) {
+  const surface = mobiusTessellation(frame, shape);
+  const widthSegments = shape.profileMode === 1
+    ? 8
+    : shape.profileMode === 2
+      ? 2
+      : shape.profileMode === 3
+        ? Math.max(12, shape.profileFrequency * 6)
+        : 1;
   return {
-    surfaceSegments,
+    ...surface,
     widthSegments,
-    centerSamples: Math.min(exact.centerSamples, 192),
-    sideSamples: Math.min(exact.sideSamples, 512),
-    signature: `preview:${surfaceSegments}:${widthSegments}`,
-    vertexCount: (surfaceSegments + 1) * (widthSegments + 1),
-    triangleCount: surfaceSegments * widthSegments * 2
+    signature: `vector:${surface.surfaceSegments}:${widthSegments}`,
+    vertexCount: (surface.surfaceSegments + 1) * (widthSegments + 1),
+    triangleCount: surface.surfaceSegments * widthSegments * 2
   };
 }
 

@@ -25,6 +25,7 @@ export interface ProjectRendererOptions {
 export interface ProjectRenderer {
   resize(viewport: ProjectRendererViewport): void;
   render(frame: ProjectFrame): void;
+  setPreviewMode?(mode: "default" | "vector"): void;
   flush?(): Promise<void>;
   getDiagnostics?(): Record<string, unknown>;
   dispose(): void;
@@ -242,6 +243,7 @@ export interface ProjectDefinition {
   supportsLoopTime?: boolean;
   supportsUnboundedPreviewTime?: boolean;
   viewControls?: boolean;
+  rendererVectorPreview?: boolean;
   spatialLightControls?: boolean;
   defaultLighting?: LightingRigState;
   lightingPresets?: LightingPresetDefinition[];
@@ -256,5 +258,4 @@ export interface ProjectDefinition {
   ): ProjectRenderer | Promise<ProjectRenderer>;
   toSvg?(frame: ProjectFrame): string;
   toSvgColorMesh?(frame: ProjectFrame): string;
-  toSvgPreview?(frame: ProjectFrame): string;
 }

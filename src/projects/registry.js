@@ -10,6 +10,7 @@ import { imageCurrentsProject } from "./image-currents.js";
 import { mobiusFlowProject } from "./mobius-flow.js";
 import { mobiusFlow11Project } from "./mobius-flow-1-1.js";
 import { mobiusFlowDynamicsProject } from "./mobius-flow-dynamics.js";
+import { mobiusConstructsProject } from "./mobius-constructs.js";
 import { orbitalBasinFlowProject } from "./orbital-basin-flow.js";
 import { orbitalBasinProject } from "./orbital-basin.js";
 import { scalarDriftProject } from "./scalar-drift.js";
@@ -28,6 +29,7 @@ export const CAUCE_PROJECTS = [
   mobiusFlowProject,
   mobiusFlow11Project,
   mobiusFlowDynamicsProject,
+  mobiusConstructsProject,
   confluenceWeaveProject,
   imageCurrentsProject,
   chromaticFluxProject,

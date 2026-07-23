@@ -62,6 +62,7 @@ La vista previa usa un contrato multi-backend dentro de un Web Worker: Canvas 2D
 - `05 · Möbius Flow`: corrientes cerradas sobre una banda de Möbius paramétrica, con una cara y un único borde.
 - `05.1 · Möbius Flow 1.1`: cinta Möbius con 1–15 medias torsiones, distribuciones controlables, perfiles geométricos, grosor 3D y SVG adaptativo.
 - `05.2 · Möbius Flow Dynamics`: flujo continuo de hasta 24.000 partículas con estelas GPU, velocidades independientes, circulación inversa y turbulencia sobre la superficie Möbius.
+- `05.3 · Möbius Constructs`: compositor vectorial con ritmo de anchura, corte longitudinal, entrelazado, eco temporal y morph entre dos formas compatibles.
 - Apariencia compartida: color único o gradiente perceptual OKLab de dos a cuatro colores, fondo independiente, materiales y texturas procedurales `Flujo`, `Grano` y `Mineral`.
 - Biblioteca de apariencias persistente: conserva la configuración completa en el navegador y en el mismo archivo local `.cauce/library.json` que los proyectos guardados; las paletas antiguas se migran al abrirlas.
 - Sincronización opcional con Netlify Blobs: combina proyectos, apariencias y eliminaciones entre dispositivos sin renunciar al funcionamiento offline.
